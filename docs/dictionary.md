@@ -103,3 +103,25 @@ The screen also closes if a failed forward lookup cannot reload the current defi
 - [Fictionaries](https://fictionary.gumroad.com/) provides dictionaries for various speculative fiction books and series.
 - [World Factbooks Archive](https://github.com/MilkMp/CIA-World-Factbooks-Archive-1990-2025) provides 36 years of CIA's World Factbook dictionaries in StarDict format.
 - [StarDict-Hebrew](https://github.com/Uri-Tauber/StarDict-Hebrew) Hebrew-English StarDict versions of Babylon dictionaries.
+
+## Khmer definitions
+
+Khmer needs its letters reordered and reshaped before they can be drawn. The
+definition screen does this with a small rule-based shaper, using extra glyphs
+that only a font converted with the `khmer` preset contains. Other fonts show
+replacement boxes for Khmer. Books are not shaped yet.
+
+Noto Sans Khmer has no Latin letters, so take them from Noto Sans:
+
+    pip install -r lib/EpdFont/scripts/requirements.txt
+    python3 lib/EpdFont/scripts/fontconvert_sdcard.py \\
+      --regular NotoSansKhmer-Regular.ttf --bold NotoSansKhmer-Bold.ttf \\
+      --fallback-regular NotoSans-Regular.ttf --fallback-bold NotoSans-Bold.ttf \\
+      --intervals latin-ext,ipa-chars,khmer \\
+      --sizes 12,14,16,18 --name NotoSansKhmer --output-dir NotoSansKhmer/
+
+Install the family in `/fonts/`; its name must contain `Khmer`. You do not need to
+select it: a definition containing Khmer loads it while the definition is open, and
+your reader font stays as it is. The slot numbers in `lib/Utf8/KhmerShaper.h` and the converter must stay in step.
+Rare forms may sit a little off; the rules were checked against HarfBuzz output
+for Noto Sans Khmer, so other fonts may need checking too.

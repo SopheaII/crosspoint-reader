@@ -42,6 +42,12 @@ class SdCardFontSystem {
   /// Returns 0 if not found. Used by CrossPointSettings::getReaderFontId().
   int resolveFontId(const char* familyName, uint8_t pointSize) const;
 
+  /// Load an installed Khmer .cpfont family (one with "Khmer" in its name) at the
+  /// size nearest pointSize, separate from the reader font. Returns its font id, or
+  /// 0 if none is installed or memory is short. Repeat calls reuse the loaded font.
+  int acquireKhmerFont(uint8_t pointSize);
+  void releaseKhmerFont();
+
   /// Access the registry (e.g. for settings UI to enumerate available fonts).
   const SdCardFontRegistry& registry() const { return registry_; }
 
@@ -110,6 +116,8 @@ class SdCardFontSystem {
   static constexpr size_t MAX_CPFONT_VARIANTS = TextBlock::MAX_WORD_FONTS + 2;  // Inline, block, and drop-cap fonts.
   std::vector<CpfontVariant> cpfontVariants_;
   uint32_t variantClock_ = 0;
+  int khmerFontId_ = 0;
+  bool khmerFontOwned_ = false;  // false when the reader family already is the Khmer font
   GfxRenderer* renderer_ = nullptr;
 
   SdCardFontRegistry registry_;

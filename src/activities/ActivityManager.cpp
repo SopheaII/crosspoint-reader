@@ -464,10 +464,21 @@ ScreenshotInfo ActivityManager::getScreenshotInfo() const {
   return {};
 }
 
-void ActivityManager::prepareForSleep() {
+void ActivityManager::prepareForSleep(const bool fromTimeout) {
   RenderLock lock;
-  for (const auto& activity : stackActivities) activity->prepareForSleep();
-  if (currentActivity) currentActivity->prepareForSleep();
+  for (const auto& activity : stackActivities) activity->prepareForSleep(fromTimeout);
+  if (currentActivity) currentActivity->prepareForSleep(fromTimeout);
+}
+
+void ActivityManager::saveReadingTimeBeforeRestart() {
+  RenderLock lock;
+  // The reader sits on the stack while its menu is open.
+  for (const auto& activity : stackActivities) {
+    if (activity->isReaderActivity()) static_cast<ReaderActivity*>(activity.get())->saveReadingTimeBeforeRestart();
+  }
+  if (currentActivity && currentActivity->isReaderActivity()) {
+    static_cast<ReaderActivity*>(currentActivity.get())->saveReadingTimeBeforeRestart();
+  }
 }
 
 void ActivityManager::requestUpdate(bool immediate) {

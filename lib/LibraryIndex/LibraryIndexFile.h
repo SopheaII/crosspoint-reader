@@ -17,8 +17,8 @@
 namespace library {
 
 enum class SortOrder : uint8_t {
-  // "Recent" orders by file modification time (arrival on the card), oldest
-  // first in Asc; firstSeen breaks ties for filesystems without timestamps.
+  // "Recent" orders by when the Library first found each book (firstSeen),
+  // oldest first in Asc.
   RecentAsc,
   RecentDesc,
   TitleAsc,

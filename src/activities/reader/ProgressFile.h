@@ -29,9 +29,11 @@ namespace ProgressFile {
 // fail at the FAT level, in which case recovery still requires fsck on a host.
 //
 // Returns true only if the new progress.bin is fully in place.
-inline bool writeAtomic(const std::string& cachePath, const uint8_t* data, size_t len) {
-  const std::string finalPath = cachePath + "/progress.bin";
-  const std::string tmpPath = cachePath + "/progress.bin.tmp";
+// `fileName` lets other small per-book files in the cache folder use the same safe write.
+inline bool writeAtomic(const std::string& cachePath, const uint8_t* data, size_t len,
+                        const char* fileName = "progress.bin") {
+  const std::string finalPath = cachePath + "/" + fileName;
+  const std::string tmpPath = finalPath + ".tmp";
 
   {
     HalFile f;

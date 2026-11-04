@@ -258,8 +258,17 @@ class BaseTheme {
   // SETTINGS.clockShowInHeader and an RTC is present. On touch boards a
   // tappable back button leads the band (see HeaderBackTapTarget); root
   // screens that own their stack bottom pass backButton = false.
+  // readingTimeText, padded for the eye icon, uses the clock's position when no clock is showing.
+  // booksRead > 0 appends a book glyph and the count to that same status run.
   virtual void drawHeader(const GfxRenderer& renderer, Rect rect, const char* title, const char* subtitle = nullptr,
-                          bool backButton = true) const;
+                          bool backButton = true, const char* readingTimeText = nullptr, uint32_t booksRead = 0) const;
+  // Home's header: no back button, and the reading time when it is enabled.
+  void drawHomeHeader(const GfxRenderer& renderer, Rect rect, const char* title) const;
+  // Header carrying the caller's own reading time (a book's time in the reader
+  // menu) in the clock slot, with the same eye and placement as Home.
+  // booksRead follows the time in the same run; 0 leaves it out.
+  void drawHeaderWithReadingTime(const GfxRenderer& renderer, Rect rect, const char* title, bool backButton,
+                                 uint32_t readingSeconds, uint32_t booksRead = 0) const;
   // Fill the battery/clock status chrome (settings + theme metrics) into
   // header props, so FUI-native screens drawing their own interactive header
   // carry the same band as drawHeader. Status text is styled with the

@@ -47,12 +47,12 @@ void drawScrollBar(const GfxRenderer& renderer, Rect rect, int itemCount, int pa
 int coverWidth = 0;
 
 void RoundedRaffTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const char* title, const char* subtitle,
-                                  const bool backButton) const {
+                                  const bool backButton, const char* readingTimeText, const uint32_t booksRead) const {
   // Home screen header is custom-rendered in drawRecentBookCover.
   if (title == nullptr) {
     return;
   }
-  BaseTheme::drawHeader(renderer, rect, title, subtitle, backButton);
+  BaseTheme::drawHeader(renderer, rect, title, subtitle, backButton, readingTimeText, booksRead);
 }
 
 void RoundedRaffTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std::vector<RecentBook>& recentBooks,

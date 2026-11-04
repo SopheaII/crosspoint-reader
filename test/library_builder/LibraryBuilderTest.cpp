@@ -51,16 +51,15 @@ class LibraryBuilderTest : public ::testing::Test {
 TEST(LibraryBookFileTest, AcceptsBookFilesTheWalkLists) {
   EXPECT_TRUE(isLibraryBookFile("book.epub"));
   EXPECT_TRUE(isLibraryBookFile("/Books/book.epub"));
-  EXPECT_TRUE(isLibraryBookFile("/notes.txt"));
-  EXPECT_TRUE(isLibraryBookFile("/a/b/c/readme.md"));
-  EXPECT_TRUE(isLibraryBookFile("/Comics/issue.xtc"));
-  EXPECT_TRUE(isLibraryBookFile("/Comics/issue.xtch"));
   EXPECT_TRUE(isLibraryBookFile("/Books/./book.epub"));
 }
 
 TEST(LibraryBookFileTest, RejectsOtherFilesAndHiddenNames) {
   EXPECT_FALSE(isLibraryBookFile(""));
   EXPECT_FALSE(isLibraryBookFile("/Books/book.pdf"));
+  EXPECT_FALSE(isLibraryBookFile("/notes.txt"));
+  EXPECT_FALSE(isLibraryBookFile("/a/b/c/readme.md"));
+  EXPECT_FALSE(isLibraryBookFile("/Comics/issue.xtc"));
   EXPECT_FALSE(isLibraryBookFile("/Books/book.epub.part"));
   EXPECT_FALSE(isLibraryBookFile("/.crosspoint/library.dirty"));
   EXPECT_FALSE(isLibraryBookFile("/.crosspoint/plugins/foo/README.md"));
@@ -70,61 +69,31 @@ TEST(LibraryBookFileTest, RejectsOtherFilesAndHiddenNames) {
   EXPECT_FALSE(isLibraryBookFile("._book.epub"));
 }
 
-TEST(LibraryBookFileTest, RejectsSystemFoldersWithoutHidingOrdinaryTextBooks) {
-  EXPECT_FALSE(isLibraryBookFile("/XTCache/fontPos.txt"));
-  EXPECT_FALSE(isLibraryBookFile("/Backup/XTCache/epub/book/language.txt"));
-  EXPECT_FALSE(isLibraryBookFile("/System Volume Information/notes.txt"));
-  EXPECT_TRUE(isLibraryBookFile("/fontPos.txt"));
-  EXPECT_TRUE(isLibraryBookFile("/language.txt"));
-  EXPECT_TRUE(isLibraryBookFile("/XTCacheArchive/book.txt"));
+TEST(LibraryBookFileTest, RejectsSystemFoldersWithoutHidingOrdinaryBooks) {
+  EXPECT_FALSE(isLibraryBookFile("/XTCache/fontPos.epub"));
+  EXPECT_FALSE(isLibraryBookFile("/Backup/XTCache/epub/book/language.epub"));
+  EXPECT_FALSE(isLibraryBookFile("/System Volume Information/notes.epub"));
+  EXPECT_TRUE(isLibraryBookFile("/fontPos.epub"));
+  EXPECT_TRUE(isLibraryBookFile("/language.epub"));
+  EXPECT_TRUE(isLibraryBookFile("/XTCacheArchive/book.epub"));
 }
 
 TEST_F(LibraryBuilderTest, SkipsSystemFolderContents) {
-  fake::add("/XTCache/fontPos.txt");
-  fake::add("/XTCache/epub/book/language.txt");
-  fake::add("/System Volume Information/notes.txt");
-  fake::add("/fontPos.txt");
-  fake::add("/language.txt");
-  fake::add("/XTCacheArchive/book.txt");
+  fake::add("/XTCache/fontPos.epub");
+  fake::add("/XTCache/epub/book/language.epub");
+  fake::add("/System Volume Information/notes.epub");
+  fake::add("/fontPos.epub");
+  fake::add("/language.epub");
+  fake::add("/XTCacheArchive/book.epub");
 
   initial();
 
   LibraryIndexFile index;
   ASSERT_TRUE(index.open(INDEX));
   EXPECT_EQ(index.header().bookCount, 5u);
-  EXPECT_EQ(fake::directoryEntriesByPath["/XTCache/fontPos.txt"], 0u);
+  EXPECT_EQ(fake::directoryEntriesByPath["/XTCache/fontPos.epub"], 0u);
   EXPECT_EQ(fake::directoryEntriesByPath["/XTCache/epub"], 0u);
-  EXPECT_EQ(fake::directoryEntriesByPath["/System Volume Information/notes.txt"], 0u);
-}
-
-TEST_F(LibraryBuilderTest, XtcTitleAndAuthorComeFromTheFile) {
-  fake::add("/Comics/one.xtc");
-  fake::add("/Comics/two.xtch");
-  bookMetadata["/Comics/one.xtc"] = {"Go Problems", "Cho Chikun", true};
-  bookMetadata["/Comics/two.xtch"] = {"Sakata no Go", "Sakata Eio", true};
-  initial();
-
-  LibraryIndexFile index;
-  ASSERT_TRUE(index.open(INDEX));
-  ASSERT_EQ(index.header().bookCount, 4u);
-  bool sawXtc = false;
-  bool sawXtch = false;
-  for (uint16_t ordinal = 0; ordinal < index.header().bookCount; ordinal++) {
-    ClixRecord record{};
-    std::string path;
-    std::string title;
-    std::string author;
-    ASSERT_TRUE(index.readRecord(ordinal, record));
-    ASSERT_TRUE(index.readPath(record, path));
-    if (path != "/Comics/one.xtc" && path != "/Comics/two.xtch") continue;
-    ASSERT_TRUE(index.readTitle(record, title));
-    ASSERT_TRUE(index.readAuthor(record, author));
-    EXPECT_EQ(title, bookMetadata[path].title);
-    EXPECT_EQ(author, bookMetadata[path].author);
-    (path == "/Comics/one.xtc" ? sawXtc : sawXtch) = true;
-  }
-  EXPECT_TRUE(sawXtc);
-  EXPECT_TRUE(sawXtch);
+  EXPECT_EQ(fake::directoryEntriesByPath["/System Volume Information/notes.epub"], 0u);
 }
 
 TEST_F(LibraryBuilderTest, UnchangedRebuildReusesMetadataAndDoesNotReplaceIndex) {
@@ -146,7 +115,7 @@ TEST_F(LibraryBuilderTest, FolderHeavyUnchangedReconciliationIoScalesLinearly) {
     fake::reset();
     bookMetadata.clear();
     for (unsigned i = 0; i < count; i++) {
-      fake::add("/folder" + numbered("", i) + "/book.txt");
+      fake::add("/folder" + numbered("", i) + "/book.epub");
     }
     if (!buildLibraryIndex("/", stats, false)) {
       ADD_FAILURE() << "initial build failed for " << count << " books";
@@ -168,20 +137,20 @@ TEST_F(LibraryBuilderTest, FolderHeavyUnchangedReconciliationIoScalesLinearly) {
 }
 
 TEST_F(LibraryBuilderTest, DirectoryEntriesAreEnumeratedOnce) {
-  fake::add("/folder/c.txt");
+  fake::add("/folder/c.epub");
 
   ASSERT_TRUE(buildLibraryIndex("/", stats, false));
 
   EXPECT_EQ(fake::directoryEntriesByPath["/a.epub"], 1u);
   EXPECT_EQ(fake::directoryEntriesByPath["/b.epub"], 1u);
   EXPECT_EQ(fake::directoryEntriesByPath["/folder"], 1u);
-  EXPECT_EQ(fake::directoryEntriesByPath["/folder/c.txt"], 1u);
+  EXPECT_EQ(fake::directoryEntriesByPath["/folder/c.epub"], 1u);
 }
 
 TEST_F(LibraryBuilderTest, DirectoryResumeFailureRetainsPreviousIndex) {
   initial();
   const auto old = fake::files[INDEX]->bytes;
-  fake::add("/aa-folder/c.txt");
+  fake::add("/aa-folder/c.epub");
   fake::failDirectorySeek = true;
 
   EXPECT_FALSE(buildLibraryIndex("/", stats, false));
@@ -190,7 +159,7 @@ TEST_F(LibraryBuilderTest, DirectoryResumeFailureRetainsPreviousIndex) {
 
 TEST_F(LibraryBuilderTest, StagingAndIndexWritesAreBatched) {
   fake::reset();
-  for (unsigned i = 0; i < 128; i++) fake::add("/book" + numbered("", i) + ".txt");
+  for (unsigned i = 0; i < 128; i++) fake::add("/book" + numbered("", i) + ".epub");
 
   ASSERT_TRUE(buildLibraryIndex("/", stats, false));
 
@@ -199,7 +168,7 @@ TEST_F(LibraryBuilderTest, StagingAndIndexWritesAreBatched) {
 }
 
 TEST_F(LibraryBuilderTest, ParentDuplicateTrackingSurvivesDirectoryRecursion) {
-  fake::add("/folder/c.txt");
+  fake::add("/folder/c.epub");
   fake::duplicateDirectoryEntry("/a.epub");
 
   ASSERT_TRUE(buildLibraryIndex("/", stats, false));
@@ -288,20 +257,23 @@ TEST_F(LibraryBuilderTest, EqualBasenamesInDifferentFoldersReconcileIndependentl
   EXPECT_EQ(stats.metadataReused, 3);
 }
 
-TEST_F(LibraryBuilderTest, ArrivalOrderFollowsModificationTimeOverDiscoveryOrder) {
-  // a and b exist with the default time; c lands with an older timestamp and d
-  // with the newest, so file times, not walk or firstSeen order, decide.
+TEST_F(LibraryBuilderTest, ArrivalOrderFollowsDiscoveryOverFileTime) {
+  initial();
+  // Copying can keep an old date; the book found last still counts as newest.
   fake::add("/c.epub", "book c", /*time=*/0);
+  ASSERT_TRUE(buildLibraryIndex("/", stats, true));
   fake::add("/d.epub", "book d", /*time=*/9);
+  ASSERT_TRUE(buildLibraryIndex("/", stats, true));
+  fake::add("/e.epub", "book e", /*time=*/1);
   ASSERT_TRUE(buildLibraryIndex("/", stats, true));
 
   LibraryIndexFile index;
   ASSERT_TRUE(index.open(INDEX));
-  EXPECT_EQ(pathAt(index, SortOrder::RecentAsc, 0), "/c.epub");
-  EXPECT_EQ(pathAt(index, SortOrder::RecentAsc, 1), "/a.epub");
-  EXPECT_EQ(pathAt(index, SortOrder::RecentAsc, 2), "/b.epub");
-  EXPECT_EQ(pathAt(index, SortOrder::RecentAsc, 3), "/d.epub");
-  EXPECT_EQ(pathAt(index, SortOrder::RecentDesc, 0), "/d.epub");
+  EXPECT_EQ(pathAt(index, SortOrder::RecentDesc, 0), "/e.epub");
+  EXPECT_EQ(pathAt(index, SortOrder::RecentDesc, 1), "/d.epub");
+  EXPECT_EQ(pathAt(index, SortOrder::RecentDesc, 2), "/c.epub");
+  EXPECT_EQ(pathAt(index, SortOrder::RecentAsc, 0), "/a.epub");
+  EXPECT_EQ(pathAt(index, SortOrder::RecentAsc, 1), "/b.epub");
 }
 
 TEST_F(LibraryBuilderTest, AddedRemovedMovedAndRenamedBooksKeepArrivalOrder) {
@@ -361,9 +333,9 @@ TEST_F(LibraryBuilderTest, DuplicateDetectionRemainsBoundedAndFindsTrackedKeysAf
   fake::reset();
   bookMetadata.clear();
   for (unsigned i = 0; i <= LIBRARY_MAX_DEDUP_KEYS; i++) {
-    fake::add("/book" + numbered("", i) + ".txt");
+    fake::add("/book" + numbered("", i) + ".epub");
   }
-  fake::duplicateDirectoryEntry("/book0000.txt");
+  fake::duplicateDirectoryEntry("/book0000.epub");
   ASSERT_TRUE(buildLibraryIndex("/", stats, false));
   EXPECT_EQ(stats.books, LIBRARY_MAX_DEDUP_KEYS + 1);
   EXPECT_EQ(stats.duplicatesDropped, 1);
@@ -467,7 +439,7 @@ TEST_F(LibraryBuilderTest, LibrariesPastOldGateAndAtFormatCeilingKeepAllOrders) 
 
 TEST_F(LibraryBuilderTest, SortAllocationFailureProducesValidDegradedIndex) {
   fake::reset();
-  for (unsigned i = 0; i < 513; i++) fake::add("/book" + numbered("", i) + ".txt");
+  for (unsigned i = 0; i < 513; i++) fake::add("/book" + numbered("", i) + ".epub");
   fake::failAlloc = 6;
 
   ASSERT_TRUE(buildLibraryIndex("/", stats, false));

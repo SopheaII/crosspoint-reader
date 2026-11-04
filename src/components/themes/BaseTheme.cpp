@@ -11,12 +11,16 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <string>
 
+#include "CrossPointState.h"
 #include "I18n.h"
 #include "RecentBooksStore.h"
 #include "clippings/SelectionGeometry.h"
 #include "components/HeaderBackTapTarget.h"
+#include "components/ReadingBook.h"
+#include "components/ReadingEye.h"
 #include "components/UIScale.h"
 #include "components/UITheme.h"
 #include "components/UIThemeTokens.h"
@@ -25,6 +29,7 @@
 #include "components/icons/cover.h"
 #include "components/icons/headerIcons.h"
 #include "fontIds.h"
+#include "util/ReadingTimeFormat.h"
 
 void BaseTheme::setCheckboxRow(freeink::ui::ListItem& item, const bool checked) {
   item.value = nullptr;
@@ -402,8 +407,27 @@ freeink::ui::Rect BaseTheme::headerBand(const GfxRenderer& renderer, const freei
                            static_cast<int16_t>(rect.width - l - r), static_cast<int16_t>(rect.height - offset)};
 }
 
+void BaseTheme::drawHomeHeader(const GfxRenderer& renderer, const Rect rect, const char* title) const {
+  if (SETTINGS.readingTimeMode == CrossPointSettings::READING_TIME_OFF) {
+    drawHeader(renderer, rect, title, nullptr, false);
+    return;
+  }
+  drawHeaderWithReadingTime(renderer, rect, title, false, APP_STATE.totalReadingSeconds, APP_STATE.booksRead);
+}
+
+void BaseTheme::drawHeaderWithReadingTime(const GfxRenderer& renderer, const Rect rect, const char* title,
+                                          const bool backButton, const uint32_t readingSeconds,
+                                          const uint32_t booksRead) const {
+  // The header draws one text run, so leading spaces keep the eye's place in it.
+  char readingTime[32];
+  const int padding = reading_eye::paddingSpaces(renderer, SMALL_FONT_ID);
+  std::memset(readingTime, ' ', padding);
+  formatReadingTime(readingSeconds, tr(STR_READING_TIME_FORMAT), readingTime + padding, sizeof(readingTime) - padding);
+  drawHeader(renderer, rect, title, nullptr, backButton, readingTime, booksRead);
+}
+
 void BaseTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const char* title, const char* subtitle,
-                           const bool backButton) const {
+                           const bool backButton, const char* readingTimeText, const uint32_t booksRead) const {
   // Every activity header renders through the FreeInkUI header + battery
   // indicator components, styled by the active theme's tokens (padding,
   // centering, underline). Non-interactive frame: no hit rects registered.
@@ -429,6 +453,19 @@ void BaseTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const char* t
   // Battery + clock chrome and their title reserves live in the FreeInkUI
   // header component; this only fills the values from settings and metrics.
   applyHeaderStatus(renderer, props);
+  // The count rides in the same status text run as the reading time, so the
+  // header measures and reserves room for both. Its spaces leave the book
+  // glyph's place between the time and the number.
+  char clockText[80];
+  const bool showBooksRead = readingTimeText && booksRead > 0;
+  if (showBooksRead) {
+    const int countPadding = reading_book::paddingSpaces(renderer, SMALL_FONT_ID);
+    snprintf(clockText, sizeof(clockText), "%s%*s%lu %s", readingTimeText, countPadding, "",
+             static_cast<unsigned long>(booksRead), tr(STR_BOOKS_READ));
+  }
+  const char* clockSlotText = showBooksRead ? clockText : readingTimeText;
+  const bool showReadingTime = clockSlotText && !props.status.clockText;
+  if (showReadingTime) props.status.clockText = clockSlotText;
   // Callers pass a full-width header rect; headerBand fits it to the board's bezel.
   const fui::Rect band = headerBand(renderer,
                                     fui::Rect{static_cast<int16_t>(rect.x), static_cast<int16_t>(rect.y),
@@ -467,6 +504,21 @@ void BaseTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const char* t
     props.styles.normal.borderWidth = tokens.headerUnderline;
   }
   fui::header(ui.frame, band, props);
+
+  if (showReadingTime) {
+    // Keep in step with the clock position in FreeInkUI header.h; the text starts with the eye's padding.
+    const auto& status = props.status;
+    const int textWidth = renderer.getTextWidth(SMALL_FONT_ID, clockSlotText);
+    const int clockX = status.clockCentered ? band.x + (band.width - textWidth) / 2
+                       : status.batteryLeft ? band.right() - status.edgeInset - textWidth
+                                            : band.x + status.edgeInset;
+    const int iconY = band.y + (status.stripHeight - reading_eye::HEIGHT) / 2;
+    reading_eye::draw(renderer, clockX, iconY);
+    if (showBooksRead) {
+      const int timeWidth = renderer.getTextWidth(SMALL_FONT_ID, readingTimeText);
+      reading_book::draw(renderer, clockX + timeWidth + reading_book::GAP, iconY);
+    }
+  }
 }
 
 void BaseTheme::drawSubHeader(const GfxRenderer& renderer, Rect rect, const char* label, const char* rightLabel) const {
@@ -992,7 +1044,7 @@ void BaseTheme::drawSelectionHandle(const GfxRenderer& renderer, const Rect rect
 void BaseTheme::drawSelectionActions(const GfxRenderer& renderer, const Rect rect, const int count,
                                      const int firstAction) {
   const auto& metrics = UITheme::getInstance().getMetrics();
-  const char* labels[] = {tr(STR_LOOKUP), tr(STR_CLIP), tr(STR_BOOKMARK_OPTION)};
+  const char* labels[] = {tr(STR_LOOKUP), tr(STR_BOOKMARK_OPTION)};
   for (int i = 0; i < count; ++i) {
     const Rect button = selectionGeometry::button(rect, i, metrics.menuSpacing, count);
     renderer.fillRoundedRect(button.x, button.y, button.width, button.height, metrics.controlRadius, Color::White);

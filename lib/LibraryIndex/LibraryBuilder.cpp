@@ -9,7 +9,6 @@
 #include <Logging.h>
 #include <Memory.h>
 #include <Utf8.h>
-#include <Xtc.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -305,8 +304,7 @@ int findPrior(WalkState& st, const uint64_t pathHash) {
   entry.pathHash = clixPathHash(fullPath.data(), fullPath.size());
   const int priorIndex = findPrior(st, entry.pathHash);
 
-  const bool isXtc = FsHelpers::hasXtcExtension(name);
-  const bool extractionExpected = st.readMetadata && (FsHelpers::hasEpubExtension(name) || isXtc);
+  const bool extractionExpected = st.readMetadata;
   const uint8_t expectedStatus = extractionExpected ? CLIX_METADATA_EXTRACTED : CLIX_METADATA_NOT_ATTEMPTED;
   bool reuseMetadata = false;
   ClixRecord priorRecord{};
@@ -347,21 +345,8 @@ int findPrior(WalkState& st, const uint64_t pathHash) {
   if (!reuseMetadata && extractionExpected) {
     st.stats->parsed++;
     std::string bookTitle;
-    bool loaded = false;
-    if (isXtc) {
-      // XTC/XTCH carry title and author in their own header block; load() reads that and the
-      // page table header, and writes no cache.
-      Xtc xtc(fullPath, CACHE_DIR);
-      loaded = xtc.load();
-      if (loaded) {
-        bookTitle = xtc.getTitle();
-        author = xtc.getAuthor();
-      }
-    } else {
-      Epub epub(fullPath, CACHE_DIR);
-      loaded = epub.loadMetadata(bookTitle, author);
-    }
-    if (loaded) {
+    Epub epub(fullPath, CACHE_DIR);
+    if (epub.loadMetadata(bookTitle, author)) {
       entry.record.metadataStatus = CLIX_METADATA_EXTRACTED;
       if (!bookTitle.empty()) {
         title = std::move(bookTitle);
@@ -879,47 +864,23 @@ bool emitIndex(const char* folderStagePath, WalkState& st, const uint16_t* order
 
   // --- arrival order -------------------------------------------------------
   //
-  // Primary key is the file's modification time, so the "Recent" shelf reflects
-  // when a book actually landed on the card rather than when a rebuild happened
-  // to discover it. firstSeen breaks ties (and carries books whose filesystem
-  // reports no time): it comes from the PREVIOUS index, so it is no longer a
-  // dense sequence in walk order — a rebuild reuses each book's original number
-  // and only hands out new ones for books it has never seen. The arrival order
-  // has to be SORTED rather than assumed, or "Recent" silently degrades into
-  // "the order the card enumerates in" — which is exactly the bug
-  // reconciliation exists to prevent.
+  // Ordered by when the Library first found each book, so a new book reaches the
+  // top of "Recent" even when copying kept an old file date. firstSeen comes from
+  // the PREVIOUS index, so it is not a dense sequence in walk order: a rebuild
+  // reuses each book's original number and only hands out new ones for books it
+  // has never seen. The order has to be SORTED rather than assumed, or "Recent"
+  // silently degrades into "the order the card enumerates in".
   if (rankable) {
     for (uint16_t i = 0; i < n; i++) arrivalOrder[i] = i;
     if (n > 1) {
-      // Fallible and non-fatal: without the array the sort still runs on
-      // firstSeen alone, which is the pre-timestamp behaviour.
-      auto mtimes = makeUniqueNoThrow<uint32_t[]>(n);
-      if (mtimes) {
-        for (uint16_t i = 0; i < n; i++) {
-          serviceBuilder(serviceUnits);
-          if (!readStageAt(static_cast<uint64_t>(order[i]) * STAGE_STRIDE + offsetof(ClixRecord, modificationTime),
-                           &mtimes[i], sizeof(mtimes[i]))) {
-            mtimes.reset();
-            break;
-          }
-        }
-      } else {
-        LOG_ERR("LIBIDX", "OOM: %u-byte mtime array, arrival falls back to firstSeen",
-                static_cast<unsigned>(n * sizeof(uint32_t)));
-      }
-      if (ioFailed) {
-        // The shared read helper latched the failure; the emit fails below.
-      } else {
-        delay(1);
-        std::sort(arrivalOrder.get(), arrivalOrder.get() + n,
-                  [order, resolvedFirstSeen, mt = mtimes.get()](const uint16_t a, const uint16_t b) {
-                    if (mt && mt[a] != mt[b]) return mt[a] < mt[b];
-                    const uint16_t aSeen = resolvedFirstSeen[order[a]];
-                    const uint16_t bSeen = resolvedFirstSeen[order[b]];
-                    return aSeen < bSeen || (aSeen == bSeen && a < b);
-                  });
-        delay(1);
-      }
+      delay(1);
+      std::sort(arrivalOrder.get(), arrivalOrder.get() + n,
+                [order, resolvedFirstSeen](const uint16_t a, const uint16_t b) {
+                  const uint16_t aSeen = resolvedFirstSeen[order[a]];
+                  const uint16_t bSeen = resolvedFirstSeen[order[b]];
+                  return aSeen < bSeen || (aSeen == bSeen && a < b);
+                });
+      delay(1);
     }
   } else {
     // Without sorting, preserve walk order by mapping each staging ordinal back
@@ -1067,8 +1028,7 @@ bool isLibraryBookFile(const std::string_view path) {
     if (slash == std::string_view::npos) break;
     start = slash + 1;
   }
-  return FsHelpers::checkFileExtension(path, ".epub") || FsHelpers::checkFileExtension(path, ".txt") ||
-         FsHelpers::checkFileExtension(path, ".md") || FsHelpers::hasXtcExtension(path);
+  return FsHelpers::checkFileExtension(path, ".epub");
 }
 
 bool markLibraryIndexDirty() {

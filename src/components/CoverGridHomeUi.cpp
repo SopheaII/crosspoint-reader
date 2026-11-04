@@ -159,7 +159,8 @@ void CoverGridHomeUi::drawHeaderBand() {
   // pushed screen's header: the battery/clock hold one position across the
   // whole UI, and the grid is widened to meet them (see the hInset above).
   const ThemeMetrics& metrics = UITheme::getInstance().getMetrics();
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, renderer.getScreenWidth(), metrics.batteryBarHeight}, nullptr);
+  GUI.drawHomeHeader(renderer, Rect{0, metrics.topPadding, renderer.getScreenWidth(), metrics.batteryBarHeight},
+                     nullptr);
 }
 
 void CoverGridHomeUi::drawEmpty(UiScreen& screen) {
@@ -283,7 +284,7 @@ void CoverGridHomeUi::drawGrid(UiScreen& screen) {
 }
 
 void CoverGridHomeUi::drawTabs(UiScreen& screen, fui::Rect rect) {
-  static constexpr const uint8_t* ICONS[] = {FolderIcon, LibraryIcon, BlocksIcon, TransferIcon, Settings2Icon};
+  static constexpr const uint8_t* ICONS[] = {LibraryIcon, FolderIcon, BlocksIcon, TransferIcon, Settings2Icon};
   int count = 0;
   for (int i = 0; i < 5; ++i) {
     if (i == 2 && !hasOpds) continue;

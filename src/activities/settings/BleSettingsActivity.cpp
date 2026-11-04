@@ -20,9 +20,9 @@ constexpr bleturner::Action MAP_ACTIONS[] = {bleturner::Action::NextPage,    ble
                                              bleturner::Action::NextChapter, bleturner::Action::PrevChapter,
                                              bleturner::Action::Confirm,     bleturner::Action::Back,
                                              bleturner::Action::ReaderMenu,  bleturner::Action::SaveQuote};
-constexpr StrId MAP_LABELS[] = {StrId::STR_NEXT_PAGE,       StrId::STR_PREV_PAGE,    StrId::STR_BT_NEXT_CHAPTER,
-                                StrId::STR_BT_PREV_CHAPTER, StrId::STR_CONFIRM,      StrId::STR_BACK,
-                                StrId::STR_READER_MENU,     StrId::STR_SAVE_CLIPPING};
+constexpr StrId MAP_LABELS[] = {StrId::STR_NEXT_PAGE,       StrId::STR_PREV_PAGE, StrId::STR_BT_NEXT_CHAPTER,
+                                StrId::STR_BT_PREV_CHAPTER, StrId::STR_CONFIRM,   StrId::STR_BACK,
+                                StrId::STR_READER_MENU,     StrId::STR_LOOKUP};
 static_assert(std::size(MAP_ACTIONS) == std::size(MAP_LABELS));
 constexpr uint32_t SCAN_MS = 15000;
 constexpr unsigned long CLEAR_HOLD_MS = 700;

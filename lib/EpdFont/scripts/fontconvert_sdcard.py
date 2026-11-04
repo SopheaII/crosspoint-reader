@@ -52,6 +52,8 @@ INTERVAL_PRESETS = {
                     (0xFB50, 0xFDF9), (0xFE70, 0xFEFF)],
     "georgian":    [(0x10A0, 0x10FF), (0x2D00, 0x2D2F)],
     "armenian":    [(0x0530, 0x058F)],
+    # Also adds the contextual-form slots; see build_khmer_slots().
+    "khmer":       [(0x1780, 0x17DD), (0x17E0, 0x17E9), (0x17F0, 0x17F9), (0x19E0, 0x19FF)],
     "ethiopic":    [(0x1200, 0x137F), (0x1380, 0x139F), (0x2D80, 0x2DDF)],
     "vietnamese":  [(0x01A0, 0x01B0), (0x1EA0, 0x1EF9)],
     "ipa-chars":   [(0x0250, 0x02AF), (0x02B0, 0x02FF)],
@@ -197,6 +199,66 @@ STANDARD_LIGATURE_MAP = {
     (0x17F, 0x74):      0xFB05,  # long-s + t
     (0x73, 0x74):       0xFB06,  # st
 }
+
+
+# Private-use slots for Khmer contextual forms. These must match lib/Utf8/KhmerShaper.h.
+KHMER_SLOT_SUBSCRIPT = 0xE780
+KHMER_SLOT_NYO_WITH_SUBSCRIPT = 0xE7A3
+KHMER_SLOT_RIGHT_PARTS = {0xE7A4: 0x17BF, 0xE7A5: 0x17C0, 0xE7A6: 0x17C5}
+KHMER_SLOT_BELOW = 0xE7B0
+KHMER_SLOT_ABOVE = 0xE7D0
+KHMER_SLOT_LAST = 0xE7E7
+KHMER_BELOW_CONTEXTS = ["\u1780\u17D2\u1780", "\u1780\u17D2\u179A", "\u1789", "\u178E", "\u179A", "\u179C", "\u17A1"]
+KHMER_ABOVE_BASES = ["\u178E", "\u179A", "\u179C"]
+KHMER_ABOVE_MARKS = [0x17B7, 0x17B8, 0x17B9, 0x17BA, 0x17C6, 0x17CB, 0x17CC, 0x17CD]
+
+
+def build_khmer_slots(font_path):
+    """Map each Khmer slot to (glyph id, dx, dy, advance) in font units.
+
+    The device has no OpenType shaping, so HarfBuzz shapes one sample of each
+    form here and the result is baked into the glyph. Offsets are relative to
+    the pen position where the device draws the slot.
+    """
+    try:
+        import uharfbuzz as hb
+    except ImportError:
+        sys.exit("Khmer fonts need HarfBuzz: pip install uharfbuzz")
+
+    blob = hb.Blob.from_file_path(font_path)
+    font = hb.Font(hb.Face(blob))
+
+    def shape(text):
+        buffer = hb.Buffer()
+        buffer.add_str(text)
+        buffer.guess_segment_properties()
+        hb.shape(font, buffer)
+        return list(zip(buffer.glyph_infos, buffer.glyph_positions))
+
+    def slot_from(info, position):
+        return (info.codepoint, position.x_offset, position.y_offset, position.x_advance)
+
+    slots = {}
+    for consonant in range(0x1780, 0x17A3):
+        text = "\u1780\u17D2" + chr(consonant)
+        # Coeng ro sorts first (before the consonant); the rest sort last.
+        info, position = shape(text)[0 if consonant == 0x179A else -1]
+        slots[KHMER_SLOT_SUBSCRIPT + consonant - 0x1780] = slot_from(info, position)
+
+    slots[KHMER_SLOT_NYO_WITH_SUBSCRIPT] = slot_from(*shape("\u1789\u17D2\u1785")[0])
+    for slot, vowel in KHMER_SLOT_RIGHT_PARTS.items():
+        # The dotted circle joins with nothing, which exposes the vowel's own right part.
+        info, position = shape("\u25CC" + chr(vowel))[-1]
+        slots[slot] = slot_from(info, position)
+    for context, sample in enumerate(KHMER_BELOW_CONTEXTS):
+        for index in range(3):
+            info, position = shape(sample + chr(0x17BB + index))[-1]
+            slots[KHMER_SLOT_BELOW + context * 3 + index] = slot_from(info, position)
+    for base_class, sample in enumerate(KHMER_ABOVE_BASES):
+        for index, mark in enumerate(KHMER_ABOVE_MARKS):
+            info, position = shape(sample + chr(mark))[-1]
+            slots[KHMER_SLOT_ABOVE + base_class * len(KHMER_ABOVE_MARKS) + index] = slot_from(info, position)
+    return slots
 
 
 def extract_ligature_glyph_indices_fonttools(font_path):
@@ -585,6 +647,12 @@ def rasterize_font_style(fontfile, size, intervals, style_id=0, force_autohint=F
     # Invalid_Size_Handle on some fonts.
     face.set_char_size(size << 6, size << 6, 150, 150)
     ligature_glyph_indices = extract_ligature_glyph_indices_fonttools(fontfile)
+    khmer_slots = {}
+    if any(start <= 0x1780 <= end for start, end in intervals):
+        khmer_slots = build_khmer_slots(fontfile)
+        intervals = sorted(list(intervals) + [(KHMER_SLOT_SUBSCRIPT, KHMER_SLOT_LAST)])
+        ligature_glyph_indices.update({cp: slot[0] for cp, slot in khmer_slots.items()})
+    khmer_scale = size * 150.0 / 72.0 / face.units_per_EM
     fallback_face = None
     if fallback_fontfile:
         fallback_face = freetype.Face(fallback_fontfile)
@@ -704,12 +772,14 @@ def rasterize_font_style(fontfile, size, intervals, style_id=0, force_autohint=F
                 pixels2b.append(px)
 
             packed = bytes(pixels2b)
+            khmer_slot = khmer_slots.get(code_point)
             glyph = GlyphProps(
                 width=bitmap.width,
                 height=bitmap.rows,
-                advance_x=fp4_from_ft16_16(f.glyph.linearHoriAdvance),
-                left=f.glyph.bitmap_left,
-                top=f.glyph.bitmap_top,
+                advance_x=(round(khmer_slot[3] * khmer_scale * 16) if khmer_slot
+                           else fp4_from_ft16_16(f.glyph.linearHoriAdvance)),
+                left=f.glyph.bitmap_left + (round(khmer_slot[1] * khmer_scale) if khmer_slot else 0),
+                top=f.glyph.bitmap_top + (round(khmer_slot[2] * khmer_scale) if khmer_slot else 0),
                 data_length=len(packed),
                 data_offset=total_bitmap_size,
                 code_point=code_point,

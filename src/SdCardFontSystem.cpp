@@ -286,6 +286,8 @@ int SdCardFontSystem::variantFontId(const int readerFontId, const uint8_t pointS
 
 void SdCardFontSystem::unloadCpfonts(GfxRenderer& renderer) {
   cpfontVariants_.clear();  // the manager owns and frees the fonts themselves
+  khmerFontId_ = 0;
+  khmerFontOwned_ = false;
   manager_.unloadAll(renderer);
 }
 
@@ -384,6 +386,51 @@ bool SdCardFontSystem::loadCpfontVariant(const SdCardFontFamilyInfo& family, con
   LOG_DBG("SDFS", "Loaded %s %upt variant (heap free %u)", family.name.c_str(), pointSize,
           static_cast<unsigned>(ESP.getFreeHeap()));
   return true;
+}
+
+int SdCardFontSystem::acquireKhmerFont(const uint8_t pointSize) {
+  if (khmerFontId_ != 0) return khmerFontId_;
+  refreshIfDirty();
+  const SdCardFontFamilyInfo* family = nullptr;
+  for (const auto& candidate : registry_.getFamilies()) {
+    if (candidate.vector || candidate.files.empty()) continue;
+    if (candidate.name.find("Khmer") != std::string::npos || candidate.name.find("khmer") != std::string::npos) {
+      family = &candidate;
+      break;
+    }
+  }
+  if (!family) return 0;
+  // Already the reader family: use it as it is, and leave it loaded afterwards.
+  if (family->name == manager_.currentFamilyName()) {
+    khmerFontId_ = manager_.getFontId(family->name);
+    khmerFontOwned_ = false;
+    return khmerFontId_;
+  }
+  const auto nearest =
+      std::min_element(family->files.begin(), family->files.end(), [pointSize](const auto& a, const auto& b) {
+        return std::abs(a.pointSize - pointSize) < std::abs(b.pointSize - pointSize);
+      });
+  static constexpr size_t MIN_FREE_BLOCK = 48 * 1024;
+  if (ESP.getMaxAllocHeap() < MIN_FREE_BLOCK) {
+    LOG_ERR("SDFS", "Low memory for Khmer font: largest free block %u", static_cast<unsigned>(ESP.getMaxAllocHeap()));
+    return 0;
+  }
+  // The salt keeps this id apart from the reader font and its sized variants.
+  static constexpr int KHMER_FONT_KEY = 0x4B484D52;  // "KHMR"
+  const int id = variantFontId(KHMER_FONT_KEY, nearest->pointSize);
+  if (!manager_.loadFamilyVariant(*family, *renderer_, nearest->pointSize, id)) {
+    LOG_ERR("SDFS", "Cannot load Khmer font %s", family->name.c_str());
+    return 0;
+  }
+  khmerFontId_ = id;
+  khmerFontOwned_ = true;
+  return id;
+}
+
+void SdCardFontSystem::releaseKhmerFont() {
+  if (khmerFontId_ != 0 && khmerFontOwned_) manager_.unloadFont(*renderer_, khmerFontId_);
+  khmerFontId_ = 0;
+  khmerFontOwned_ = false;
 }
 
 int SdCardFontSystem::resolveFontId(const char* familyName, uint8_t /*pointSize*/) const {

@@ -204,6 +204,7 @@ To make `.cpfont` files for any device, convert your TrueType/OpenType fonts:
 | `arabic` | Arabic + Supplement + Extended-A + Presentation Forms A/B (RTL, contextual shaping) |
 | `georgian` | Georgian + Georgian Supplement |
 | `armenian` | Armenian |
+| `khmer` | Khmer, plus its contextual forms (needs `uharfbuzz`; see [dictionary.md](dictionary.md#khmer-definitions)) |
 | `ethiopic` | Ethiopic + Extended |
 | `vietnamese` | Vietnamese subset (ơ/ư and combining marks) |
 | `ipa-chars` | IPA Extensions + Spacing Modifier Letters (phonetic transcription) |

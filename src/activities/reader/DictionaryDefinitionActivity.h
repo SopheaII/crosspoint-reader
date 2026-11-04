@@ -62,6 +62,7 @@ class DictionaryDefinitionActivity final : public Activity {
     int currentPage = 0;
     int totalPages = 1;
     int linesPerPage = 1;
+    int fontId = 0;  // non-zero when this definition draws with its own font
     int selectionPage = 0;
     ClipSelectionActivity::Selection selection;
 
@@ -91,6 +92,8 @@ class DictionaryDefinitionActivity final : public Activity {
     std::vector<std::unique_ptr<Page>> selectionPages;
   };
 
+  static void prepareKhmer(Definition& next);
+  static int fontIdFor(const Definition& definition);
   bool prepareDefinition(Definition& next, bool forcePlain = false);
   bool layoutHtmlPages(Definition& next);
   bool wrapText(Definition& next);

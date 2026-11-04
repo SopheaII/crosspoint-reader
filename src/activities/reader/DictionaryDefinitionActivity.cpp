@@ -5,6 +5,7 @@
 #include <GfxRenderer.h>
 #include <HalMemory.h>
 #include <I18n.h>
+#include <KhmerShaper.h>
 #include <Logging.h>
 #include <Memory.h>
 #include <Utf8.h>
@@ -17,6 +18,7 @@
 #include "CrossPointSettings.h"
 #include "HapticFeedback.h"
 #include "ReaderUtils.h"
+#include "SdCardFontSystem.h"
 #include "components/HeaderBackTapTarget.h"
 #include "components/UITheme.h"
 #include "util/DictHtmlPages.h"
@@ -140,8 +142,40 @@ void DictionaryDefinitionActivity::onEnter() {
   requestUpdate();
 }
 
+int DictionaryDefinitionActivity::fontIdFor(const Definition& definition) {
+  return definition.fontId != 0 ? definition.fontId : SETTINGS.getReaderFontId();
+}
+
+// A Khmer definition draws with its own font, so the reader font stays as chosen.
+// Without that font or enough heap the text stays as it is, which beats losing
+// the definition.
+void DictionaryDefinitionActivity::prepareKhmer(Definition& next) {
+  next.fontId = 0;
+  auto& text = next.text;
+  if (!khmer::containsKhmer(text)) return;
+  next.fontId = sdFontSystem.acquireKhmerFont(SETTINGS.fontPointSize);
+  if (next.fontId == 0) {
+    LOG_ERR("DICT", "No Khmer font available");
+    return;
+  }
+  const size_t maxSize = khmer::maxShapedSize(text.size());
+  const auto heap = HalMemory::getDefaultHeap();
+  if (heap.freeBytes < 2 * maxSize + HEAP_HEADROOM || heap.largestBlockBytes < 2 * maxSize) {
+    LOG_ERR("DICT", "Low heap for Khmer text (%u bytes)", static_cast<unsigned>(maxSize));
+    return;
+  }
+  auto shaped = makeUniqueNoThrow<char[]>(maxSize);
+  if (!shaped) {
+    LOG_ERR("DICT", "OOM: Khmer text (%u bytes)", static_cast<unsigned>(maxSize));
+    return;
+  }
+  const size_t length = khmer::shape(text, shaped.get());
+  text.assign(shaped.get(), length);
+}
+
 bool DictionaryDefinitionActivity::prepareDefinition(Definition& next, const bool forcePlain) {
   std::replace(next.text.begin(), next.text.end(), '\0', '\n');
+  prepareKhmer(next);
   if (htmlDefinition && !forcePlain && next.text.size() <= MAX_STYLED_HTML_BYTES && layoutHtmlPages(next)) return true;
   if (htmlDefinition) {
     if (auto* fcm = renderer.getFontCacheManager()) fcm->releaseSdFontCaches();
@@ -160,6 +194,7 @@ void DictionaryDefinitionActivity::onExit() {
   if (auto* fcm = renderer.getFontCacheManager()) {
     fcm->releaseSdFontCaches();
   }
+  sdFontSystem.releaseKhmerFont();
 }
 
 DictionaryDefinitionActivity::BodyArea DictionaryDefinitionActivity::bodyArea() const {
@@ -195,7 +230,7 @@ bool DictionaryDefinitionActivity::layoutHtmlPages(Definition& next) {
     return false;
   }
   if (!buildDictionaryHtmlPages(renderer, definition, static_cast<uint16_t>(body.width),
-                                static_cast<uint16_t>(body.height), pages)) {
+                                static_cast<uint16_t>(body.height), pages, next.fontId)) {
     return false;
   }
   definition.clear();
@@ -232,7 +267,7 @@ bool DictionaryDefinitionActivity::wrapText(Definition& next) {
   lines.clear();
   if (!reserveLines(next, definition.size() / 32 + 8)) return false;
 
-  const int fontId = SETTINGS.getReaderFontId();
+  const int fontId = fontIdFor(next);
   // SD-card fonts: merge every definition codepoint into the persistent
   // advance table up front. Otherwise each unseen codepoint measured below
   // falls back to an on-demand glyph load from SD (8-slot overflow ring).
@@ -319,7 +354,8 @@ bool DictionaryDefinitionActivity::wrapText(Definition& next) {
       const uint32_t len = lineEnd - lineStart;
       uint32_t lastFit = 0;
       for (uint32_t f = 1; f <= len; f++) {
-        if (f == len || (text[lineStart + f] & 0xC0) != 0x80) {  // codepoint boundary
+        // A codepoint boundary that doesn't split a Khmer letter from its marks.
+        if (f == len || ((text[lineStart + f] & 0xC0) != 0x80 && khmer::canBreakAt(text + lineStart, f))) {
           if (measureSpan(fontId, text + lineStart, f, lineBold ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR) >
               maxWidth)
             break;
@@ -455,7 +491,7 @@ void DictionaryDefinitionActivity::navigateDefinition(const bool back) {
 
 bool DictionaryDefinitionActivity::buildPlainSelectionPages() {
   // Only the selection window gets packed word arenas; the definition keeps its cheap line spans.
-  const int fontId = SETTINGS.getReaderFontId();
+  const int fontId = fontIdFor(content);
   const int lineHeight = renderer.getLineHeight(fontId, PLAIN_TEXT_LINE_SPACING);
   const int pageCount = std::min<int>(SELECTION_PAGE_WINDOW, content.totalPages - content.selectionPage);
   const size_t scratchBytes =
@@ -538,8 +574,8 @@ void DictionaryDefinitionActivity::startSelection(const int x, const int y) {
                          std::min<size_t>(SELECTION_PAGE_WINDOW, content.pages.size() - content.selectionPage));
   }
   const auto body = bodyArea();
-  auto selection =
-      makeUniqueNoThrow<ClipSelectionActivity>(renderer, mappedInput, pages, body.x, body.y, content.selection, x, y);
+  auto selection = makeUniqueNoThrow<ClipSelectionActivity>(renderer, mappedInput, pages, body.x, body.y,
+                                                            content.selection, x, y, content.fontId);
   if (!selection) {
     LOG_ERR("DICT", "OOM: definition selection (%u bytes)", static_cast<unsigned>(sizeof(ClipSelectionActivity)));
     lookup->selectionPages.clear();
@@ -704,7 +740,7 @@ void DictionaryDefinitionActivity::render(RenderLock&&) {
   // Body: two-pass draw inside a prewarm scope (same pattern as the reader's
   // renderContents) so SD-card font glyphs load from SD in one batch instead
   // of one on-demand overflow read per character on every page turn.
-  const int fontId = SETTINGS.getReaderFontId();
+  const int fontId = fontIdFor(content);
   const BodyArea body = bodyArea();
   auto* fcm = renderer.getFontCacheManager();
   auto scope = fcm->createPrewarmScope();

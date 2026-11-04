@@ -719,7 +719,7 @@ bool PngToBmpConverter::pngFileToBmpStreamInternal(HalFile& pngFile, Print& bmpO
         else if (fsDitherer)
           fsDitherer->nextRow();
       }
-      bmpOut.write(rowBuffer, bytesPerRow);
+      if (bmpOut.write(rowBuffer, bytesPerRow) != static_cast<size_t>(bytesPerRow)) return false;
       yieldDuringDecode(rowsSinceYield);
     } else {
       // Area-averaging scaling (same as JpegToBmpConverter)
@@ -787,7 +787,7 @@ bool PngToBmpConverter::pngFileToBmpStreamInternal(HalFile& pngFile, Print& bmpO
             fsDitherer->nextRow();
         }
 
-        bmpOut.write(rowBuffer, bytesPerRow);
+        if (bmpOut.write(rowBuffer, bytesPerRow) != static_cast<size_t>(bytesPerRow)) return false;
         currentOutY++;
         yieldDuringDecode(rowsSinceYield);
 

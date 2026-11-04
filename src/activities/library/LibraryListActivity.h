@@ -1,7 +1,11 @@
 #pragma once
 
+#include <Bitmap.h>
+#include <HalStorage.h>
 #include <LibraryIndexFile.h>
 
+#include <array>
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -10,10 +14,12 @@
 #include "RecentBooksStore.h"
 #include "activities/UiTabListActivity.h"
 #include "components/OptionPopup.h"
+#include "components/media/cover-grid.h"
 
 // One Library screen: every indexed book on the card shown by recency, title,
-// or author. The Recent shelf orders by file modification time (when a book
-// landed on the card) and pins the recently OPENED books from RecentBooksStore
+// or author, plus the Favorites list. Recent and Favorites start as a three-column
+// cover grid; holding either tab switches both to a list. The Recent shelf orders by when the Library
+// first found each book and pins the recently OPENED books from RecentBooksStore
 // on top, so active reads and fresh arrivals share one list.
 //
 // The two-slot row is the whole point rather than a styling choice: the problem
@@ -35,6 +41,7 @@ class LibraryListActivity final : public UiTabListActivity {
 
   void onEnter() override;
   void onExit() override;
+  void loop() override;
 
  protected:
   // --- UiListActivity / UiTabListActivity contract ---------------------------
@@ -43,7 +50,10 @@ class LibraryListActivity final : public UiTabListActivity {
   void activateIndex(int index) override;
   void onRowLongPress(int index) override;
 #if FREEINK_CAP_TOUCH
-  bool canSwipeDelete(int index) const override { return !groupsCollapsed && index >= 0 && index < listCount(); }
+  // The grid draws no reveal, so a hidden one would only swallow the next tap.
+  bool canSwipeDelete(int index) const override {
+    return !inGridMode() && !groupsCollapsed && index >= 0 && index < listCount();
+  }
   void swipeDelete(int index) override;
 #endif
   int tabCount() const override;
@@ -51,6 +61,8 @@ class LibraryListActivity final : public UiTabListActivity {
   const char* tabLabel(int index) const override;
   freeink::ui::TabIndicator tabIndicator(int index) const override;
   void onTabAction(int index) override;
+  // Hold on the active tab: grid/list on Recent and Favorites, Title/Author on the name tab.
+  void onTabLongPress(int index) override;
   void stepTab(int direction) override;
   bool handleCustomInput() override;
   bool handleButtons() override;
@@ -80,12 +92,19 @@ class LibraryListActivity final : public UiTabListActivity {
   void openBookByPath(const std::string& path);
   void promptRebuildIndex();
   void resetAfterRebuild();
-  // Recent-row long-press menu: open / remove from recents / delete / rebuild.
+  // Recent and Favorites long-press menu: open / favorite / remove from recents /
+  // delete / rebuild.
   void showRecentBookOptions(int entry);
   void promptRemoveRecentBook(const std::string& path, const std::string& title);
   // Long-press delete owns the gesture where grouping does not apply: the
   // Recent sort, degraded lists, and any active search result.
   bool deleteEligible() const;
+  // True when the shown list is a subset of the sort order: a search result or
+  // the Favorites tab. Rows then map through `filtered`.
+  bool filterActive() const;
+  // Recent and Favorites rows open the options menu on a hold.
+  bool usesBookOptions() const;
+  void toggleFavorite(const std::string& path);
   // Resolves the row's path and title, then confirms via promptDeleteBookByPath.
   void promptDeleteBook(int entry);
   void promptDeleteBookByPath(const std::string& path, const std::string& title);
@@ -93,7 +112,7 @@ class LibraryListActivity final : public UiTabListActivity {
   void expandGroup(int groupEntry);
   void restoreExpandedList();
   void selectTab(int index, bool toggleIfActive);
-  void toggleSortDirection();
+  void switchNameTab();
   // Sub-screens act on button press, so a button still held when we resume must
   // not also act here. Records what to swallow on the next release.
   void swallowHeldReleases();
@@ -117,6 +136,17 @@ class LibraryListActivity final : public UiTabListActivity {
 
   // Screen building
   void buildHeader(UiScreen& screen);
+  // Recent and Favorites show three-column cover thumbnails until a tab is held.
+  bool inGridMode() const;
+  int pageStep();
+  void toggleGridView();
+  void buildGrid(UiScreen& screen);
+  void prepareGridCells(int count);
+  bool paintGridCover(freeink::ui::Rect rect, uint16_t entry);
+  bool buildOneGridCover();
+  bool pathForEntry(int entry, std::string& path);
+  bool rememberFailed(uint64_t pathHash);
+  bool hasFailed(uint64_t pathHash) const;
   // Materializes ListItems and their strings for the visible window only.
   void buildRows(UiScreen& screen);
   static void formatInitialHeading(uint32_t initial, std::string& out);
@@ -140,12 +170,16 @@ class LibraryListActivity final : public UiTabListActivity {
   void resolvePinned();
   // Direction-space translation of the matched rows. Call on sort toggles.
   void refreshOverlap();
+  // The store entry behind a pinned row, or nullptr when out of range.
+  const RecentBook* pinnedBook(int entry) const;
 
   library::LibraryIndexFile index;
   int activeTabIndex = 0;
   library::SortOrder sortOrder = library::SortOrder::RecentDesc;
   // One bit per tab; Recent starts descending (newest first).
   uint8_t descendingTabs = 1u << 0;
+  // Which sort the shared Title/Author tab shows; Title when the screen opens.
+  bool nameTabByAuthor = false;
   // Set when the walk finished but the sort did not, so the screen can say the
   // order is discovery order rather than silently showing a wrong one.
   bool degraded = false;
@@ -184,13 +218,50 @@ class LibraryListActivity final : public UiTabListActivity {
   // ascending, so unpinned entries map to sort rows with a <=10-step walk.
   uint16_t pinnedAscRows[RecentBooksStore::MAX_RECENT_BOOKS] = {};
   uint16_t overlapRows[RecentBooksStore::MAX_RECENT_BOOKS] = {};
+  // RecentBooksStore position of each pinned row; non-EPUB entries are skipped.
+  uint8_t pinnedStoreIndex[RecentBooksStore::MAX_RECENT_BOOKS] = {};
   uint8_t pinnedTotal = 0;
   uint8_t overlapCount = 0;
 
   bool lockNextConfirmRelease = false;
   bool lockNextBackRelease = false;
 
-  // Row options modal (Recent long-press menu); owned here so it outlives the
+  // Row options modal (book long-press menu); owned here so it outlives the
   // touch event that opened it.
   OptionPopup optionPopup;
+
+  // --- Recent cover grid ---------------------------------------------------
+  static constexpr int GRID_COLUMNS = 3;
+  static constexpr int GRID_MAX_CELLS = 8;
+  static constexpr size_t MAX_FAILED_COVERS = 32;
+  struct GridCell {
+    std::string path;
+    std::string title;
+    // "<cache>/thumb_[HEIGHT].bmp"; the height is filled in at draw time.
+    std::string thumbTemplate;
+    uint64_t pathHash = 0;
+    // Thumbnail height already confirmed on the card, so scans skip the lookup.
+    int readyHeight = 0;
+    bool failed = false;
+  };
+  bool gridView = true;
+  // The grid scrolls with the selection after button moves; a swipe scrolls it
+  // freely until the next move.
+  std::atomic<bool> gridFollow{true};
+  // Set by each grid build; loop() then looks for one thumbnail to make.
+  std::atomic<bool> gridCoverPending{false};
+  // A build starts only after this time, so navigation and repaints go first.
+  unsigned long gridBuildNotBefore = 0;
+  // When the buttons began reading active; 0 while idle. See loop().
+  unsigned long inputActiveSince = 0;
+  int gridTop = 0;
+  int gridCellsVisible = 0;
+  int gridThumbHeight = 0;
+  std::array<GridCell, GRID_MAX_CELLS> gridCells;
+  std::array<uint64_t, MAX_FAILED_COVERS> failedCovers{};
+  size_t failedCoverCount = 0;
+  // Large SDK props and the shared bitmap reader stay off the render task's stack.
+  freeink::ui::CoverGridProps gridProps;
+  HalFile coverFile;
+  Bitmap coverBitmap{coverFile};
 };

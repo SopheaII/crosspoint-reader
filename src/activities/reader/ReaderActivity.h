@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -69,7 +70,25 @@ class ReaderActivity : public Activity {
   void clearEndOfBookOptionsIfNeeded();
   void disableFastInitialRefresh();
   void notePageTurn(bool forward, bool succeeded);
-  void flushReaderSession();
+  void flushReaderSession(bool countCurrentPage = true);
+  void bankReadingTime(bool countCurrentPage);
+  void saveReadingTimeBeforeRestart();
+
+  // Cache folder that holds this book's per-book files; null when the reader keeps none.
+  virtual const std::string* bookCachePath() const { return nullptr; }
+  // Per-book time is tracked only while its setting is on; off never changes the saved time.
+  // Banking writes the file, so call it only at flush points, never per page.
+  void loadBookReadingTime();
+  std::optional<uint32_t> readBookReadingFile() const;
+  void writeBookReadingFile(uint32_t seconds) const;
+  // Per-book read flag: a 1-byte marker beside the reading time, so it moves
+  // with the cache folder. Clearing the flag removes the marker.
+  bool readBookReadFile() const;
+  bool writeBookReadFile(bool read) const;
+  // Saved time plus the page being read, for the reader menu; empty while untracked.
+  std::optional<uint32_t> bookReadingForMenu() const;
+  uint32_t bookReadingSeconds = 0;
+  bool bookReadingTracked = false;
 
  public:
   ~ReaderActivity() override = default;
@@ -79,7 +98,7 @@ class ReaderActivity : public Activity {
 
   void onEnter() override;
   void onExit() override;
-  void prepareForSleep() override;
+  void prepareForSleep(bool fromTimeout) override;
   void loop() override;
   void render(RenderLock&& lock) override;
 

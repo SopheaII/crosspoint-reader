@@ -107,6 +107,10 @@ class ActivityManager {
   // Note: if popActivity() on last activity on the stack, we will goHome()
   void popActivity();
 
+  // A screen change or a repaint is queued; background work should wait for it.
+  bool hasPendingTransition() const { return pendingAction != PendingAction::None; }
+  bool updatePending() const { return requestedUpdate.load(); }
+
   bool preventAutoSleep() const;
   bool requiresExclusiveStorageLoop() const;
   bool isReaderActivity() const;
@@ -124,7 +128,9 @@ class ActivityManager {
   bool handleForcedRefresh();
   bool skipLoopDelay() const;
   ScreenshotInfo getScreenshotInfo() const;
-  void prepareForSleep();
+  void prepareForSleep(bool fromTimeout);
+  // For a restart out of a shown book, which skips the reader's exit.
+  void saveReadingTimeBeforeRestart();
 
   // If immediate is true, the update will be triggered immediately.
   // Otherwise, it will be deferred until the end of the current loop iteration.

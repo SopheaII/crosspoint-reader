@@ -5,6 +5,7 @@ add_executable(ReaderSessionTest
 
 target_include_directories(ReaderSessionTest PRIVATE
   ${REPO_ROOT}/src/activities/reader
+  ${REPO_ROOT}/src/util
 )
 
 target_link_libraries(ReaderSessionTest PRIVATE

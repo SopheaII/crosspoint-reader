@@ -67,6 +67,14 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // escape hatch for a zone whose law changed before the firmware caught up.
   enum CLOCK_DST_MODE { CLOCK_DST_AUTO = 0, CLOCK_DST_ON = 1, CLOCK_DST_OFF = 2, CLOCK_DST_MODE_COUNT };
 
+  // Persisted by index: append only. Off or a lower mode never deletes saved times.
+  enum READING_TIME_MODE {
+    READING_TIME_OFF = 0,
+    READING_TIME_HOME = 1,
+    READING_TIME_HOME_AND_BOOK = 2,
+    READING_TIME_MODE_COUNT
+  };
+
   enum ORIENTATION {
     PORTRAIT = 0,       // 480x800 logical coordinates (current default)
     LANDSCAPE_CW = 1,   // 800x480 logical coordinates, rotated 180° (swap top/bottom)
@@ -282,6 +290,8 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t clockDst = CLOCK_DST_AUTO;
   // Show the clock opposite the battery in every header band that draws one.
   uint8_t clockShowInHeader = 0;
+  // Home counts and shows the total on Home; Home + book also keeps each book's own time.
+  uint8_t readingTimeMode = READING_TIME_HOME_AND_BOOK;
   // Set once an NTP sync succeeds. Used to skip re-syncing on every WiFi connect.
   // Resetting to 0 (e.g. via the web UI) forces a re-sync on next WiFi connect.
   uint8_t clockHasBeenSynced = 0;

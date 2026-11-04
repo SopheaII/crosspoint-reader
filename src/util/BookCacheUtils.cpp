@@ -6,6 +6,7 @@
 #include <Xtc.h>
 
 #include "ClippingStore.h"
+#include "FavoritesStore.h"
 
 bool isBookCacheDirectoryName(const char* name) {
   if (!name) {
@@ -35,5 +36,6 @@ void clearBookCache(const std::string& path) {
 bool removeBookFile(const std::string& path) {
   if (!Storage.remove(path.c_str())) return false;
   clearBookCache(path);
+  FAVORITES.remove(path);
   return ClippingStore::deleteForFilePath(path, "epub");
 }

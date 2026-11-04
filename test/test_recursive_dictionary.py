@@ -77,6 +77,8 @@ harness = r'''
 #include <BidiUtils.h>
 #include <Utf8.h>
 #include <Memory.h>
+// Shaping has its own suite; this one only covers the navigation around it.
+namespace khmer { inline bool canBreakAt(const char*, size_t) { return true; } }
 #include "activities/ActivityResult.h"
 #include "components/HeaderBackTapTarget.h"
 #define LOG_ERR(...) ((void)0)
@@ -193,7 +195,7 @@ struct ClipSelectionActivity {
 };
 bool styledAvailable = false;
 bool buildDictionaryHtmlPages(Renderer& renderer, const std::string&, uint16_t, uint16_t,
-                               std::vector<std::unique_ptr<Page>>& pages) {
+                               std::vector<std::unique_ptr<Page>>& pages, int = 0) {
   renderer.cache.released = false;
   if (!styledAvailable) return false;
   for (int i = 0; i < 4; ++i) pages.push_back(std::make_unique<Page>());
@@ -229,6 +231,8 @@ struct DictionaryDefinitionActivity {
     child = std::move(next);
     callback = std::move(handler);
   }
+  static void prepareKhmer(Definition&) {}
+  static int fontIdFor(const Definition&) { return 0; }
   bool prepareDefinition(Definition&, bool forcePlain = false);
   bool layoutHtmlPages(Definition&);
   bool reserveLines(Definition&, size_t);

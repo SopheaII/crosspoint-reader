@@ -23,7 +23,7 @@ Check [our Devices page](https://crosspointreader.com/devices) for the full list
 
 - **Touch reading**: follow EPUB links and look up words in the dictionary on touch-enabled devices.
 
-- **Highlights and clippings**: highlight text in EPUBs and save excerpts as clippings. Use the reader menu on button devices, or hold a word and drag the selection handles on touch devices. Look up selected words or phrases in the dictionary. Enable Sync Clippings to sync saved excerpts through a compatible CrossPoint Sync server. See [Clippings and Highlights](USER_GUIDE.md#53-clippings-and-highlights).
+- **Dictionary lookup**: hold a word and drag the selection handles on touch devices, or use the reader menu or a long-press shortcut on button devices, to look up words or phrases.
 
 - **Screenshots.**
 
@@ -31,11 +31,11 @@ Check [our Devices page](https://crosspointreader.com/devices) for the full list
 
 - **Tilt page turn (X3 and Sticky)**.
 
-- **Bluetooth page turners**: pair a remote under Settings → Connectivity → Bluetooth Page Turner. Map short and long presses to page turns, chapter navigation, the reader menu, or clipping selection.
+- **Bluetooth page turners**: pair a remote under Settings → Connectivity → Bluetooth Page Turner. Map short and long presses to page turns, chapter navigation, the reader menu, or dictionary lookup.
 
 - **USB Drive mode (X4Pro)**: access the SD card as USB mass storage.
 
-- **Library workflow**: indexed title/author search, recently-added and alphabetical views, multilingual grouping, folder browser, recent books, and SD-cache management.
+- **Library workflow**: indexed title/author search, a cover grid of recent books, favorites, alphabetical views, multilingual grouping, folder browser, recent books, and SD-cache management.
 
 - **Wireless workflows**:
   
@@ -262,6 +262,7 @@ cache. This cache directory exists at `.crosspoint` on the SD card. The structur
 │       └── ...
 ├── settings.json        # device settings
 ├── state.json           # resume/runtime state
+├── favorites.json       # favorite books list
 └── recent.json          # recent books list
 ```
 

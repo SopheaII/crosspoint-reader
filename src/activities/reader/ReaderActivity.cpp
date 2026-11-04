@@ -14,11 +14,13 @@
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "EpubReaderActivity.h"
+#include "ProgressFile.h"
 #include "ReaderUtils.h"
 #include "RecentBooksStore.h"
 #include "SdCardFontSystem.h"
 #include "XtcReaderActivity.h"
 #include "util/PluginEvents.h"
+#include "util/ReadingTimeFormat.h"
 
 ReaderActivity::ReaderActivity(const char* name, GfxRenderer& renderer, MappedInputManager& mappedInput,
                                std::string bookPath, const bool allowFastInitialRefresh)
@@ -80,6 +82,7 @@ void ReaderActivity::onEnter() {
     if (!handleLoadFailure()) finish();
     return;
   }
+  loadBookReadingTime();
 
   requestUpdate();
 }
@@ -126,9 +129,98 @@ void ReaderActivity::onExit() {
   endOfBookOptionsReady.store(false, std::memory_order_release);
 }
 
-void ReaderActivity::prepareForSleep() { flushReaderSession(); }
+// Auto-sleep means nobody touched the device, so the page on screen may be unread.
+void ReaderActivity::prepareForSleep(const bool fromTimeout) { flushReaderSession(!fromTimeout); }
 
-void ReaderActivity::flushReaderSession() {
+// The total reaches the SD card with the next state save, normally at sleep entry or reader exit.
+void ReaderActivity::bankReadingTime(const bool countCurrentPage) {
+  const uint32_t readingSeconds = readerSession.takeReadingSeconds(millis(), countCurrentPage);
+  if (readingSeconds == 0) return;
+  if (SETTINGS.readingTimeMode != CrossPointSettings::READING_TIME_OFF) APP_STATE.addReadingSeconds(readingSeconds);
+  if (bookReadingTracked) {
+    bookReadingSeconds = addReadingSeconds(bookReadingSeconds, readingSeconds);
+    writeBookReadingFile(bookReadingSeconds);
+  }
+}
+
+void ReaderActivity::loadBookReadingTime() {
+  bookReadingSeconds = 0;
+  bookReadingTracked =
+      SETTINGS.readingTimeMode == CrossPointSettings::READING_TIME_HOME_AND_BOOK && bookCachePath() != nullptr;
+  if (!bookReadingTracked) return;
+  if (const auto saved = readBookReadingFile()) {
+    bookReadingSeconds = *saved;
+  } else if (Storage.exists((*bookCachePath() + "/readtime.bin").c_str())) {
+    // Present but unreadable: leave it alone rather than overwrite it with a fresh count.
+    bookReadingTracked = false;
+  }
+}
+
+std::optional<uint32_t> ReaderActivity::readBookReadingFile() const {
+  const std::string* cachePath = bookCachePath();
+  if (!cachePath) return std::nullopt;
+  // A power cut between the write's remove and rename leaves only the complete .tmp copy.
+  for (const char* name : {"/readtime.bin", "/readtime.bin.tmp"}) {
+    HalFile f;
+    uint8_t data[4];
+    if (Storage.openFileForRead("RDT", *cachePath + name, f) && f.read(data, sizeof(data)) == 4) {
+      return static_cast<uint32_t>(data[0]) | (static_cast<uint32_t>(data[1]) << 8) |
+             (static_cast<uint32_t>(data[2]) << 16) | (static_cast<uint32_t>(data[3]) << 24);
+    }
+  }
+  return std::nullopt;
+}
+
+void ReaderActivity::writeBookReadingFile(const uint32_t seconds) const {
+  const std::string* cachePath = bookCachePath();
+  if (!cachePath) return;
+  const uint8_t data[4] = {static_cast<uint8_t>(seconds), static_cast<uint8_t>(seconds >> 8),
+                           static_cast<uint8_t>(seconds >> 16), static_cast<uint8_t>(seconds >> 24)};
+  if (!ProgressFile::writeAtomic(*cachePath, data, sizeof(data), "readtime.bin")) {
+    LOG_ERR("RDT", "Could not save book reading time");
+  }
+}
+
+bool ReaderActivity::readBookReadFile() const {
+  const std::string* cachePath = bookCachePath();
+  if (!cachePath) return false;
+  // A power cut between the write's remove and rename leaves only the complete .tmp copy.
+  for (const char* name : {"/read.bin", "/read.bin.tmp"}) {
+    HalFile f;
+    uint8_t marker = 0;
+    if (Storage.openFileForRead("RD", *cachePath + name, f) && f.read(&marker, sizeof(marker)) == sizeof(marker)) {
+      return marker != 0;
+    }
+  }
+  return false;
+}
+
+bool ReaderActivity::writeBookReadFile(const bool read) const {
+  const std::string* cachePath = bookCachePath();
+  if (!cachePath) return false;
+  if (!read) {
+    // Missing files already mean "not read"; the temp may be a left-over write.
+    Storage.remove((*cachePath + "/read.bin").c_str());
+    Storage.remove((*cachePath + "/read.bin.tmp").c_str());
+    return true;
+  }
+  const uint8_t marker = 1;
+  return ProgressFile::writeAtomic(*cachePath, &marker, sizeof(marker), "read.bin");
+}
+
+std::optional<uint32_t> ReaderActivity::bookReadingForMenu() const {
+  if (!bookReadingTracked) return std::nullopt;
+  return addReadingSeconds(bookReadingSeconds, readerSession.pendingReadingSeconds(millis()));
+}
+
+void ReaderActivity::saveReadingTimeBeforeRestart() {
+  bankReadingTime(true);
+  APP_STATE.saveToFile();
+}
+
+void ReaderActivity::flushReaderSession(const bool countCurrentPage) {
+  bankReadingTime(countCurrentPage);
+
   if (!readerSession.isEmitWorthy() || !pluginevents::anySubscriber(pluginevents::Event::ReaderSession)) {
     readerSession.reset();
     return;

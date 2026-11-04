@@ -778,6 +778,22 @@ std::string Epub::getCoverBmpPath(bool cropped, bool originalThresholds) const {
 }
 
 namespace {
+// Fails a cover build's writes once the caller asks to stop. Every step of the
+// build already treats a short write as failure and removes its partial output.
+class AbortablePrint final : public Print {
+ public:
+  AbortablePrint(Print& out, const Epub::CoverAbortFn shouldAbort) : out(out), shouldAbort(shouldAbort) {}
+  size_t write(const uint8_t value) override { return write(&value, 1); }
+  size_t write(const uint8_t* buffer, const size_t size) override {
+    if (shouldAbort && shouldAbort()) return 0;
+    return out.write(buffer, size);
+  }
+
+ private:
+  Print& out;
+  const Epub::CoverAbortFn shouldAbort;
+};
+
 StaticSemaphore_t gifGenerationMutexStorage;
 const SemaphoreHandle_t gifGenerationMutex = xSemaphoreCreateMutexStatic(&gifGenerationMutexStorage);
 
@@ -957,7 +973,7 @@ bool Epub::generateThumbBmp(int height) const {
   return generateThumbBmpForCover(height, bookMetadataCache->coreMetadata.coverItemHref);
 }
 
-bool Epub::generateThumbBmpFromSource(int height) {
+bool Epub::generateThumbBmpFromSource(int height, const CoverAbortFn shouldAbort) {
   if (Storage.exists(getThumbBmpPath(height).c_str())) return true;
   if (Txt::isTxtOrMd(filepath)) {
     std::string companionCover = Txt::findCompanionCoverImage(filepath);
@@ -980,11 +996,13 @@ bool Epub::generateThumbBmpFromSource(int height) {
   zip.reset();
   // The cover of a protected book is encrypted like everything else.
   if (!decryptor && !openProtection()) return false;
+  if (shouldAbort && shouldAbort()) return false;
   setupCacheDir();
-  return generateThumbBmpForCover(height, metadata->coverItemHref);
+  return generateThumbBmpForCover(height, metadata->coverItemHref, shouldAbort);
 }
 
-bool Epub::generateThumbBmpForCover(int height, const std::string& coverImageHref) const {
+bool Epub::generateThumbBmpForCover(int height, const std::string& coverImageHref,
+                                    const CoverAbortFn shouldAbort) const {
   if (coverImageHref.empty()) {
     LOG_DBG("EBP", "No known cover image for thumbnail");
     return false;
@@ -997,7 +1015,7 @@ bool Epub::generateThumbBmpForCover(int height, const std::string& coverImageHre
   if (FsHelpers::hasJpgExtension(coverImageHref)) {
     LOG_DBG("EBP", "Generating thumb BMP from JPG cover image");
     const auto coverJpgTempPath = getCachePath() + "/.cover.jpg";
-    if (!extractItemToFile(coverImageHref, coverJpgTempPath)) return false;
+    if (!extractItemToFile(coverImageHref, coverJpgTempPath, shouldAbort)) return false;
 
     HalFile coverJpg;
     if (!Storage.openFileForRead("EBP", coverJpgTempPath, coverJpg)) {
@@ -1012,8 +1030,9 @@ bool Epub::generateThumbBmpForCover(int height, const std::string& coverImageHre
     // Generate 1-bit BMP for fast home screen rendering (no gray passes needed)
     int THUMB_TARGET_WIDTH = height * 0.6;
     int THUMB_TARGET_HEIGHT = height;
-    const bool success = JpegToBmpConverter::jpegFileTo1BitBmpStreamWithSize(coverJpg, thumbBmp, THUMB_TARGET_WIDTH,
-                                                                             THUMB_TARGET_HEIGHT);
+    AbortablePrint bmpOut(thumbBmp, shouldAbort);
+    const bool success =
+        JpegToBmpConverter::jpegFileTo1BitBmpStreamWithSize(coverJpg, bmpOut, THUMB_TARGET_WIDTH, THUMB_TARGET_HEIGHT);
     // Explicitly close() files before calling Storage.remove()
     coverJpg.close();
     thumbBmp.close();
@@ -1028,7 +1047,7 @@ bool Epub::generateThumbBmpForCover(int height, const std::string& coverImageHre
   } else if (FsHelpers::hasPngExtension(coverImageHref)) {
     LOG_DBG("EBP", "Generating thumb BMP from PNG cover image");
     const auto coverPngTempPath = getCachePath() + "/.cover.png";
-    if (!extractItemToFile(coverImageHref, coverPngTempPath)) return false;
+    if (!extractItemToFile(coverImageHref, coverPngTempPath, shouldAbort)) return false;
 
     HalFile coverPng;
     if (!Storage.openFileForRead("EBP", coverPngTempPath, coverPng)) {
@@ -1041,8 +1060,9 @@ bool Epub::generateThumbBmpForCover(int height, const std::string& coverImageHre
     }
     int THUMB_TARGET_WIDTH = height * 0.6;
     int THUMB_TARGET_HEIGHT = height;
+    AbortablePrint bmpOut(thumbBmp, shouldAbort);
     const bool success =
-        PngToBmpConverter::pngFileTo1BitBmpStreamWithSize(coverPng, thumbBmp, THUMB_TARGET_WIDTH, THUMB_TARGET_HEIGHT);
+        PngToBmpConverter::pngFileTo1BitBmpStreamWithSize(coverPng, bmpOut, THUMB_TARGET_WIDTH, THUMB_TARGET_HEIGHT);
     // Explicitly close() files before calling Storage.remove()
     coverPng.close();
     thumbBmp.close();
@@ -1055,9 +1075,11 @@ bool Epub::generateThumbBmpForCover(int height, const std::string& coverImageHre
     LOG_DBG("EBP", "Generated thumb BMP from PNG cover image, success: %s", success ? "yes" : "no");
     return success;
   } else if (FsHelpers::hasGifExtension(coverImageHref)) {
-    return generateGifBmp(*this, coverImageHref, getThumbBmpPath(height), [height](HalFile& gif, Print& bmp) {
-      return GifToBmpConverter::gifFileTo1BitBmpStreamWithSize(gif, bmp, height * 0.6, height);
-    });
+    return generateGifBmp(*this, coverImageHref, getThumbBmpPath(height),
+                          [height, shouldAbort](HalFile& gif, Print& bmp) {
+                            AbortablePrint bmpOut(bmp, shouldAbort);
+                            return GifToBmpConverter::gifFileTo1BitBmpStreamWithSize(gif, bmpOut, height * 0.6, height);
+                          });
   } else {
     LOG_ERR("EBP", "Cover image is not a supported format, skipping thumbnail");
   }
@@ -1144,14 +1166,16 @@ bool Epub::readItemContentsToStream(const std::string& itemHref, Print& out, con
   return ZipFile(filepath).readFileToStream(path.c_str(), out, chunkSize, allowEarlyStop);
 }
 
-bool Epub::extractItemToFile(const std::string& itemHref, const std::string& destPath) const {
+bool Epub::extractItemToFile(const std::string& itemHref, const std::string& destPath,
+                             const CoverAbortFn shouldAbort) const {
   HalFile out;
   if (!Storage.openFileForWrite("EBP", destPath, out)) {
     return false;
   }
   // Large images dominate lazy extraction. Match the section streamer size to
   // halve SD read/write calls while adding only 8 KB of transient ZIP buffers.
-  const bool ok = readItemContentsToStream(itemHref, out, 8192);
+  AbortablePrint guarded(out, shouldAbort);
+  const bool ok = readItemContentsToStream(itemHref, guarded, 8192);
   out.flush();
   out.close();
   if (!ok) {

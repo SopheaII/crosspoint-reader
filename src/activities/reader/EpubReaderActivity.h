@@ -33,7 +33,6 @@ class EpubReaderActivity final : public ReaderActivity {
   std::optional<uint32_t> currentPageVisibleOffset;
   std::optional<uint32_t> pendingOffsetJump;
   unsigned long lastPageTurnTime = 0UL;
-  unsigned long pageTurnDuration = 0UL;
   int8_t pendingManualTurn = 0;
   bool pendingManualTurnTouch = false;
   bool pendingPercentJump = false;
@@ -43,7 +42,6 @@ class EpubReaderActivity final : public ReaderActivity {
   uint8_t pageLoadRetryCount = 0;
   static constexpr uint8_t MAX_PAGE_LOAD_RETRIES = 3;
   bool skipNextButtonCheck = false;
-  bool automaticPageTurnActive = false;
   bool showBookmarkMessage = false;
   bool showDictionaryMessage = false;
   unsigned long dictionaryMessageTime = 0UL;
@@ -100,7 +98,10 @@ class EpubReaderActivity final : public ReaderActivity {
   bool overlayRefreshPending = false;
   void pushOverlayRefresh();
   void settleOverlayRefresh();
-  int autoTurnOption = 0;  // current auto page-turn rate index (More panel)
+  // The book's "marked as read" flag, stored in its cache dir. Updating it also
+  // keeps APP_STATE.booksRead (the Home header total) in step.
+  bool bookRead = false;
+  void setBookRead(bool read);
   std::vector<EpubReaderMenuActivity::MenuItem> moreItems;
   EpubReaderMenuActivity::MenuAction selectedMenuAction = EpubReaderMenuActivity::MenuAction::SELECT_CHAPTER;
 
@@ -197,15 +198,13 @@ class EpubReaderActivity final : public ReaderActivity {
   std::string moreRowValue(int row) const;
   void activateMoreRow(int row);
   void openFootnoteSelect(bool reopenMenuOnCancel);
-  void openDictionaryWordSelect();
-  void startClipSelection(int initialX = -1, int initialY = -1,
-                          ClipSelectionActivity::Mode mode = ClipSelectionActivity::Mode::Clip);
+  void openDictionaryWordSelect(int initialX = -1, int initialY = -1);
+  void startClipSelection(int initialX, int initialY, ClipSelectionActivity::Mode mode);
   int clippingAtPoint(const Page& page, int x, int y) const;
   void openClippings();
   void applyProgressChange(const ProgressChangeResult& progress);
   bool launchKOReaderSync();
   unsigned long confirmLongPressThreshold() const;
-  void toggleAutoPageTurn(uint8_t selectedPageTurnOption);
   void loadCachedBookmarks();
   void addBookmark();
   void updateBookmarkFlag();
@@ -238,6 +237,7 @@ class EpubReaderActivity final : public ReaderActivity {
   // Wi-Fi join + SNTP for a loan whose date could not be verified, then a
   // clean re-open of the book.
   void beginLoanTimeSync();
+  const std::string* bookCachePath() const override { return epub ? &epub->getCachePath() : nullptr; }
   std::string getBookTitle() const override { return epub ? epub->getTitle() : ""; }
   std::string getBookAuthor() const override { return epub ? epub->getAuthor() : ""; }
   std::string getBookThumbBmpPath() const override { return epub ? epub->getThumbBmpPath() : ""; }

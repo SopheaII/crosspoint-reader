@@ -170,7 +170,7 @@ inline std::vector<StrId> buildLongPressMenuValues() {
                                StrId::STR_DICTIONARY};
   values.reserve(CrossPointSettings::LONG_PRESS_MENU_FUNCTION_COUNT);
   if (BoardConfig::hasHomeKey()) values.push_back(StrId::STR_READER_MENU);
-  values.push_back(StrId::STR_SAVE_CLIPPING);
+  values.push_back(StrId::STR_LOOKUP);
   values.push_back(StrId::STR_FOOTNOTES);
   return values;
 }
@@ -214,7 +214,7 @@ inline std::vector<ShortPowerButtonOption> shortPowerButtonOptions() {
   if (BoardConfig::hasTouch()) {
     options.push_back({StrId::STR_CONFIRM, CrossPointSettings::PWR_CONFIRM});
   } else {
-    options.push_back({StrId::STR_SAVE_CLIPPING, CrossPointSettings::CREATE_CLIPPING});
+    options.push_back({StrId::STR_LOOKUP, CrossPointSettings::CREATE_CLIPPING});
   }
   // Touch boards without a home key have no button for these shortcuts.
   if (BoardConfig::hasTouch() && !BoardConfig::hasHomeKey()) {

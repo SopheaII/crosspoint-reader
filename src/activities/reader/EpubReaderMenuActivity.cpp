@@ -19,14 +19,18 @@ EpubReaderMenuActivity::EpubReaderMenuActivity(GfxRenderer& renderer, MappedInpu
                                                const std::string& title, const int currentPage, const int totalPages,
                                                const int bookProgressPercent, const uint8_t currentOrientation,
                                                const bool hasFootnotes, const bool hasBookmarks,
-                                               const bool hasClippings, MenuAction& selectedAction)
+                                               const bool hasClippings,
+                                               const std::optional<uint32_t> bookReadingSeconds, const bool bookRead,
+                                               MenuAction& selectedAction)
     : UiListActivity("EpubReaderMenu", renderer, mappedInput),
       selectedAction(selectedAction),
       title(title),
       pendingOrientation(currentOrientation),
       currentPage(currentPage),
       totalPages(totalPages),
-      bookProgressPercent(bookProgressPercent) {
+      bookProgressPercent(bookProgressPercent),
+      bookReadingSeconds(bookReadingSeconds),
+      bookRead(bookRead) {
   buildMenuItems(menuItems, hasFootnotes, hasBookmarks, hasClippings);
   buildMenuRowItems();
 }
@@ -73,10 +77,6 @@ void EpubReaderMenuActivity::buildMenuItems(std::vector<MenuItem>& items, const 
     items.push_back({MenuAction::BOOKMARKS, StrId::STR_BOOKMARKS});
   }
   items.push_back({MenuAction::TOGGLE_BOOKMARK, StrId::STR_TOGGLE_BOOKMARK});
-  items.push_back({MenuAction::SAVE_CLIPPING, StrId::STR_SAVE_CLIPPING});
-  if (hasClippings) {
-    items.push_back({MenuAction::VIEW_CLIPPINGS, StrId::STR_VIEW_CLIPPINGS});
-  }
   if (!slideSwitchOwns(CrossPointSettings::SLIDE_SWITCH_NIGHT_MODE)) {
     items.push_back({MenuAction::NIGHT_MODE, StrId::STR_NIGHT_MODE});
   }
@@ -90,7 +90,7 @@ void EpubReaderMenuActivity::buildMenuItems(std::vector<MenuItem>& items, const 
     items.push_back({MenuAction::DICTIONARY, StrId::STR_LOOKUP});
   }
   items.push_back({MenuAction::ROTATE_SCREEN, StrId::STR_ORIENTATION});
-  items.push_back({MenuAction::AUTO_PAGE_TURN, StrId::STR_AUTO_TURN_PAGES_PER_MIN});
+  items.push_back({MenuAction::MARK_READ, StrId::STR_MARK_AS_READ});
   items.push_back({MenuAction::GO_TO_PERCENT, StrId::STR_GO_TO_PERCENT});
   items.push_back({MenuAction::SCREENSHOT, StrId::STR_SCREENSHOT_BUTTON});
   items.push_back({MenuAction::DISPLAY_QR, StrId::STR_DISPLAY_QR});
@@ -118,7 +118,7 @@ void EpubReaderMenuActivity::toggleBluetooth() {
 void EpubReaderMenuActivity::closeCancelled() {
   ActivityResult result;
   result.isCancelled = true;
-  result.data = MenuResult{-1, pendingOrientation, selectedPageTurnOption};
+  result.data = MenuResult{-1, pendingOrientation, bookRead};
   setResult(std::move(result));
   finish();
 }
@@ -151,12 +151,8 @@ void EpubReaderMenuActivity::activateIndex(const int index) {
     return;
   }
 
-  if (selectedAction == MenuAction::AUTO_PAGE_TURN) {
-    optionPopup.show(I18N.get(StrId::STR_AUTO_TURN_PAGES_PER_MIN), pageTurnLabels.data(),
-                     static_cast<int>(pageTurnLabels.size()), selectedPageTurnOption, [this](int idx) {
-                       selectedPageTurnOption = idx;
-                       requestUpdate();
-                     });
+  if (selectedAction == MenuAction::MARK_READ) {
+    bookRead = !bookRead;
     requestUpdate();
     return;
   }
@@ -183,7 +179,7 @@ void EpubReaderMenuActivity::activateIndex(const int index) {
     return;
   }
 
-  setResult(MenuResult{static_cast<int>(selectedAction), pendingOrientation, selectedPageTurnOption});
+  setResult(MenuResult{static_cast<int>(selectedAction), pendingOrientation, bookRead});
   finish();
 }
 
@@ -232,8 +228,8 @@ void EpubReaderMenuActivity::buildScreen(UiScreen& screen) {
     const auto action = menuItems[i].action;
     if (action == MenuAction::ROTATE_SCREEN) {
       menuRowItems[i].value = I18N.get(orientationLabels[pendingOrientation]);
-    } else if (action == MenuAction::AUTO_PAGE_TURN) {
-      menuRowItems[i].value = pageTurnLabels[selectedPageTurnOption];
+    } else if (action == MenuAction::MARK_READ) {
+      GUI.setCheckboxRow(menuRowItems[i], bookRead);
     } else if (action == MenuAction::NIGHT_MODE) {
       GUI.setCheckboxRow(menuRowItems[i], SETTINGS.screenInverted);
     } else if (action == MenuAction::BLUETOOTH) {
@@ -259,8 +255,15 @@ void EpubReaderMenuActivity::buildScreen(UiScreen& screen) {
 
 void EpubReaderMenuActivity::drawChrome() {
   // Header via GUI.drawHeader (already FreeInkUI-themed) for the battery
-  // indicator; the rest of the screen renders through the app.
-  GUI.drawHeader(renderer, UITheme::getInstance().getHeaderRect(renderer, true, false), title.c_str());
+  // indicator; the rest of the screen renders through the app. The book's
+  // reading time rides in the header's clock slot, like Home's, so a long
+  // chapter/progress line cannot squeeze it off the screen.
+  const Rect headerRect = UITheme::getInstance().getHeaderRect(renderer, true, false);
+  if (bookReadingSeconds) {
+    GUI.drawHeaderWithReadingTime(renderer, headerRect, title.c_str(), true, *bookReadingSeconds);
+    return;
+  }
+  GUI.drawHeader(renderer, headerRect, title.c_str());
 }
 
 void EpubReaderMenuActivity::render(RenderLock&& lock) {

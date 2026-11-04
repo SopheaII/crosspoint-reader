@@ -9,8 +9,14 @@
 
 bool PersistableStoreBase::writeDocToFile(const char* path, const JsonDocument& doc) {
   Storage.mkdir("/.crosspoint");
+  // A document or string that ran out of heap is partial; keep the old file.
+  const size_t expected = measureJson(doc);
   String json;
-  serializeJson(doc, json);
+  if (doc.overflowed() || !json.reserve(expected) || serializeJson(doc, json) != expected ||
+      json.length() != expected) {
+    LOG_ERR("PERSIST", "Out of memory serializing %s", path);
+    return false;
+  }
   if (!Storage.writeFile(path, json)) {
     LOG_ERR("PERSIST", "Failed to write %s", path);
     return false;
