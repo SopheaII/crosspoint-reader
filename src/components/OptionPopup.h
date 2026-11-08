@@ -72,6 +72,31 @@ class OptionPopup {
     activate(currentIndex, std::move(onSelect));
   }
 
+  // A row menu entry: a plain action row, or a checkbox row shown off or on.
+  enum class Toggle : uint8_t { None = 0, Off = 1, On = 2 };
+
+  // Row menu: the options render as full-width rows inside the dialog instead
+  // of buttons, so a row can carry a checkbox. Activating a checkbox row flips
+  // it and keeps the menu open; a plain action row fires and dismisses as usual.
+  void showRows(const char* titleStr, const char* headlineStr, const char* const* options, const Toggle* toggles,
+                int optionCount, std::function<void(int)> onSelect) {
+    title = titleStr;
+    headline = headlineStr ? headlineStr : "";
+    const int count = std::min<int>(optionCount, MAX_OPTIONS);
+    ownedStrings.resize(count);
+    for (int i = 0; i < count; i++) ownedStrings[i] = options[i];
+    std::fill_n(toggleStates, MAX_OPTIONS, Toggle::None);
+    for (int i = 0; i < count; i++) toggleStates[i] = toggles[i];
+    activate(0, std::move(onSelect));
+    rowsMode = true;
+  }
+
+  // Correct a toggle row's box after a failed action.
+  void setToggleState(const int index, const bool checked) {
+    if (index < 0 || index >= static_cast<int>(ownedStrings.size()) || toggleStates[index] == Toggle::None) return;
+    toggleStates[index] = checked ? Toggle::On : Toggle::Off;
+  }
+
   bool handleInput(MappedInputManager& input, const std::function<void()>& requestUpdate) {
     if (!active) return false;
 
@@ -82,10 +107,9 @@ class OptionPopup {
       if (uiReady) {
         const freeink::ui::ActionEvent event = interactions.routePublished(snap);
         if (event && event.action == ACTION_OPTION) {
-          // Tap released on an option: select it, fire, dismiss.
+          // Tap released on an option: select it, fire (toggle rows stay open).
           selectedIndex = event.value;
-          active = false;
-          if (onSelectCallback) onSelectCallback(selectedIndex);
+          fire(selectedIndex);
           haptic_feedback::touchAction();
           requestUpdate();
           return true;
@@ -137,8 +161,7 @@ class OptionPopup {
       requestUpdate();
       return true;
     } else if (confirm) {
-      active = false;
-      if (onSelectCallback) onSelectCallback(selectedIndex);
+      fire(selectedIndex);
       requestUpdate();
       return true;
     } else if (back) {
@@ -186,14 +209,6 @@ class OptionPopup {
     const int totalOptions = static_cast<int>(ownedStrings.size());
     const uint8_t count = static_cast<uint8_t>(totalOptions > MAX_OPTIONS ? MAX_OPTIONS : totalOptions);
 
-    fui::DialogOption options[MAX_OPTIONS];
-    for (uint8_t i = 0; i < count; ++i) {
-      options[i].label = ownedStrings[i].c_str();
-      options[i].action = ACTION_OPTION;
-      options[i].value = static_cast<int16_t>(i);
-      options[i].state = (i == selectedIndex) ? fui::StateFocused : fui::StateNormal;
-    }
-
     fui::OptionDialogProps props;
     props.title = title.empty() ? nullptr : title.c_str();
     props.headline = headline.empty() ? nullptr : headline.c_str();
@@ -203,12 +218,6 @@ class OptionPopup {
       props.messageText.align = fui::TextAlign::Center;
       props.messageText.maxLines = 6;
     }
-    props.options = options;
-    props.optionCount = count;
-    props.verticalOptions = true;
-    // Touch only: physical buttons stay on the legacy wrap/confirm path above,
-    // so the buffer never competes with it for focus/confirm dispatch.
-    props.inputMask = fui::InputTouch;
     props.titleText.font = fui::GfxRendererTarget::FONT_BODY;
     props.titleText.bold = true;
     props.titleText.align = fui::TextAlign::Center;
@@ -237,14 +246,80 @@ class OptionPopup {
     props.styles.focused = props.styles.normal;
     props.styles.active = props.styles.normal;
     props.styles.disabled = props.styles.normal;
-    props.buttonHeight =
+    const int16_t buttonHeight =
         fui::clampI16(target.lineHeight(fui::GfxRendererTarget::FONT_BODY) + metrics.optionPopupSelectionVPadding * 2);
+    props.buttonHeight = buttonHeight;
 
     // Fixed fraction of the screen, clamped by the theme's side margins; the
     // old max-text-width sizing is gone, long labels wrap inside the buttons.
     const fui::Rect screen = device.screen();
     const int16_t width =
         fui::clampI16(std::min<int>(screen.width * 3 / 4, screen.width - metrics.optionPopupDialogSideMargin * 2));
+
+    if (rowsMode) {
+      // Rows fill the dialog's content band (optionCount 0), which optionDialog
+      // returns instead of drawing buttons. Height is measured up front so the
+      // band can show every row without scrolling.
+      const int16_t contentWidth = fui::clampI16(width - innerPadding * 2);
+      fui::ListProps list;
+      list.rowProvider = &OptionPopup::provideRow;
+      list.rowProviderCtx = const_cast<OptionPopup*>(this);
+      list.count = count;
+      list.selectedIndex = static_cast<int16_t>(selectedIndex);
+      list.action = ACTION_OPTION;
+      list.inputMask = fui::InputTouch;
+      list.rowHeight = buttonHeight;
+      list.rowGap = props.gap;
+      list.toggleCheckbox = true;
+      const int16_t box = std::max<int16_t>(12, static_cast<int16_t>(buttonHeight - 8));
+      list.toggleWidth = box;
+      list.toggleHeight = box;
+      list.labelText.font = fui::GfxRendererTarget::FONT_BODY;
+      list.labelText.maxLines = 2;
+      list.scrollIndicator = false;
+      if (theme.listSelectionStyle == fui::SelectionStyle::InvertFill && theme.listRowRadius > 0) {
+        list.rowStyles = fui::defaultListRowStyles();
+        list.rowStyles.focused = list.rowStyles.selected;
+        fui::setStyleRadius(list.rowStyles, theme.listRowRadius);
+      }
+
+      int16_t rowsHeight = 0;
+      for (uint8_t i = 0; i < count; ++i) {
+        fui::ListItem item;
+        provideRow(const_cast<OptionPopup*>(this), i, item);
+        const fui::ListRowLayout row = fui::measureListRow(target, nullptr, contentWidth, list, item);
+        rowsHeight = fui::clampI16(rowsHeight + row.height + (i > 0 ? props.gap : 0));
+      }
+      props.options = nullptr;
+      props.optionCount = 0;
+      props.contentHeight = rowsHeight;
+
+      const int16_t height = fui::clampI16(fui::optionDialogHeight(target, props, width), 0, screen.height);
+      const fui::Rect dialogRect = fui::centeredRect(screen, fui::Size{width, height});
+      frame.hit(dialogRect, ACTION_CHROME, 0, fui::InputTouch);
+      const fui::Rect band = fui::optionDialog(frame, dialogRect, props);
+      if (band.height > 0) {
+        fui::list(frame, band, list);
+      }
+      interactions.publish();
+      uiReady = true;
+      return;
+    }
+
+    fui::DialogOption options[MAX_OPTIONS];
+    for (uint8_t i = 0; i < count; ++i) {
+      options[i].label = ownedStrings[i].c_str();
+      options[i].action = ACTION_OPTION;
+      options[i].value = static_cast<int16_t>(i);
+      options[i].state = (i == selectedIndex) ? fui::StateFocused : fui::StateNormal;
+    }
+    props.options = options;
+    props.optionCount = count;
+    props.verticalOptions = true;
+    // Touch only: physical buttons stay on the legacy wrap/confirm path above,
+    // so the buffer never competes with it for focus/confirm dispatch.
+    props.inputMask = fui::InputTouch;
+
     const int16_t height = fui::clampI16(fui::optionDialogHeight(target, props, width), 0, screen.height);
     const fui::Rect dialogRect = fui::centeredRect(screen, fui::Size{width, height});
 
@@ -276,16 +351,51 @@ class OptionPopup {
   static constexpr freeink::ui::ActionId ACTION_OPTION = 1;
   static constexpr freeink::ui::ActionId ACTION_CHROME = 2;
 
+  // Toggle rows flip their box and keep the menu open so several can be set in
+  // one visit; action rows dismiss and then fire. The box changes optimistically
+  // before the callback, which can correct it with setToggleState().
+  void fire(const int index) {
+    if (index < 0 || index >= static_cast<int>(ownedStrings.size())) {
+      active = false;
+      return;
+    }
+    if (rowsMode && toggleStates[index] != Toggle::None) {
+      toggleStates[index] = toggleStates[index] == Toggle::On ? Toggle::Off : Toggle::On;
+    } else {
+      active = false;
+    }
+    if (onSelectCallback) onSelectCallback(index);
+  }
+
+  // Row-mode only: build one list row from the owned label and toggle state.
+  static void provideRow(void* context, uint16_t index, freeink::ui::ListItem& item) {
+    const auto* self = static_cast<const OptionPopup*>(context);
+    if (index >= self->ownedStrings.size()) return;
+    item.label = self->ownedStrings[index].c_str();
+    item.actionValue = static_cast<int16_t>(index);
+    if (index < MAX_OPTIONS && self->toggleStates[index] != Toggle::None) {
+      item.toggle = true;
+      item.toggleChecked = self->toggleStates[index] == Toggle::On;
+    }
+  }
+
   void activate(int currentIndex, std::function<void(int)> onSelect) {
     const int count = std::min<int>(ownedStrings.size(), MAX_OPTIONS);
     selectedIndex = currentIndex >= 0 && currentIndex < count ? currentIndex : 0;
     onSelectCallback = std::move(onSelect);
     message.clear();
+    // showRows() opts back in after this; each show() otherwise starts as a
+    // plain option dialog.
+    rowsMode = false;
     uiReady = false;
     active = count > 0;
   }
 
   bool active = false;
+  bool rowsMode = false;
+  // One entry per row; None keeps the row an action row. Fixed size so opening
+  // the menu never allocates beyond the label vector show() already builds.
+  Toggle toggleStates[MAX_OPTIONS] = {};
   std::string title;
   std::string headline;
   std::string message;

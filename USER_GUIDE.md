@@ -127,19 +127,20 @@ The Browse Files screen acts as a file and folder browser. The full path to the 
 
 The Library indexes up to 4,096 `.epub` books on the SD card and shows their titles and authors without requiring you to remember their folders. Its three tabs provide different views. An arrow beside an indexed tab shows the sort direction:
 
-- **Recent** shows a three-column grid of book covers, with your recently opened books first and then the rest, starting with those the Library found most recently. Covers are made one at a time and cached, so a new page shows placeholders first. Hold the **Recent** tab to switch between the grid and a plain list. Hold a book for options, including favorites.
-- **Favorites** shows the books you marked, up to 100, by title, in the same cover grid. It reuses covers already made for Recent. Hold a book to remove it from the list. Holding the **Recent** or **Favorites** tab switches both between the grid and a list.
+- **Recent** shows a three-column grid of book covers, with your recently opened books first and then the rest, starting with those the Library found most recently. Covers are made one at a time and cached, so a new page shows placeholders first. Hold the **Recent** tab to switch between the grid and a plain list. Hold a book for options: open it, toggle **Favorite** (while Favorites has room for another book) and **Mark as Read**, remove it from Recents, delete it, or refresh the library. At the 100-book limit an unmarked book shows a **Favorites Full** row instead of the checkbox.
+- **Favorites** shows the books you marked, up to 100, by title, in the same cover grid. It reuses covers already made for Recent. Hold a book for the same options; turning **Favorite** off removes it from this tab. Holding the **Recent** or **Favorites** tab switches both between the grid and a list.
 - **Title** groups books by the first letter of the title. Titles beginning with numbers or punctuation appear under `#`; letters from non-English scripts, including Hebrew, have their own groups. Hold the tab to switch it to **Author**, which groups books by author. Hold it again to switch back. Each switch starts sorted A-Z.
 
 On a button-only device:
 
 - Use **Up/Down** or **Left/Right** to move one row at a time. Hold a direction to move a page at a time. In the cover grids, **Left/Right** moves to the neighbouring book and **Up/Down** moves one row; **Up** from the top row returns to the tabs.
 - Press **Confirm** to open the selected book.
+- In Recent or Favorites, hold **Confirm** on a book to open its options.
 - Press **Back** from the book list to focus the tabs. Use **Left/Right** to select another tab, press **Confirm** to reverse its sort direction, or press **Down** to return to the list.
 - While the tabs are focused, press **Up** to open Search. Hold **Confirm** on **Recent** or **Favorites** to switch between the grid and the list, or on **Title** to switch to **Author**.
 - In the Title or Author view, hold **Confirm** on a book to collapse the list to its letter or author groups. The matching group remains selected. Press **Confirm** to enter a group, or **Back** to restore the exact book and position you came from.
 
-On a touch device, tap tabs, books, and the Search icon directly. Tap an active indexed tab again to reverse its sort direction. Swipe to scroll. Long-press the **Recent** or **Favorites** tab to switch between the grid and the list, or the **Title** tab to switch to **Author**, and swipe up or down to page through covers. Long-press a book in Recent or Favorites for options, including adding or removing a favorite. Long-press a book in a Title or Author view to collapse to the group list, then tap a group to expand it.
+On a touch device, tap tabs, books, and the Search icon directly. Tap an active indexed tab again to reverse its sort direction. Swipe to scroll. Long-press the **Recent** or **Favorites** tab to switch between the grid and the list, or the **Title** tab to switch to **Author**, and swipe up or down to page through covers. Long-press a book in Recent or Favorites for options, including the **Favorite** and **Mark as Read** toggles. Long-press a book in a Title or Author view to collapse to the group list, then tap a group to expand it.
 
 The index is created automatically the first time the Library is opened, and rescanned on the first visit after each restart, so books copied from a computer appear then. To pick up other file changes or updated metadata, use **Settings → System → Rebuild library index**. The **Use book metadata** setting controls whether the index reads titles and authors stored inside books.
 
@@ -267,7 +268,7 @@ Settings are grouped into **System**, **Display**, **Reader**, **Controls**, **L
   - "Home" - Show your total reading time in the Home screen header, such as "0d 9h 40m"
   - "Home + Book" (default) - Also keep each EPUB book's own time, shown in the reader menu header after the eye icon, such as "(eye) 0d 1h 5m". It is saved in the book's cache folder. XTC books are not tracked per book, but their time still counts toward the Home total.
 
-  While this setting is on, the Home header also shows how many books you marked as read after a book icon, such as "(eye) 0d 9h 40m (book) 12 read". Mark an EPUB book with **Mark as Read** in the reader menu; the count updates when you close the menu. The total only changes when you mark or unmark a book, so deleting a book, or its cache, does not lower it. **Clear Reading Cache** in Settings removes every mark, so re-marking those books adds them again.
+  While this setting is on, the Home header also shows how many books you marked as read after a book icon, such as "(eye) 0d 9h 40m (book) 12 read". Mark an EPUB book with **Mark as Read** in the reader menu, or from the same toggle in a Library book's options; closing the reader menu updates the count, and the Library toggle updates it immediately. The total only changes when you mark or unmark a book, so deleting a book, or its cache, does not lower it. **Clear Reading Cache** in Settings removes every mark, so re-marking those books adds them again.
   
   Changing this setting never deletes saved time. "Off" and "Home" stop counting what they don't cover, and the saved totals return when you switch back. Deleting a book's cache from the reader menu keeps its time, but **Clear Reading Cache** in Settings removes the saved time of every book.
 

@@ -14,12 +14,13 @@
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "EpubReaderActivity.h"
-#include "ProgressFile.h"
 #include "ReaderUtils.h"
 #include "RecentBooksStore.h"
 #include "SdCardFontSystem.h"
 #include "XtcReaderActivity.h"
+#include "util/BookReadState.h"
 #include "util/PluginEvents.h"
+#include "util/ProgressFile.h"
 #include "util/ReadingTimeFormat.h"
 
 ReaderActivity::ReaderActivity(const char* name, GfxRenderer& renderer, MappedInputManager& mappedInput,
@@ -183,29 +184,12 @@ void ReaderActivity::writeBookReadingFile(const uint32_t seconds) const {
 
 bool ReaderActivity::readBookReadFile() const {
   const std::string* cachePath = bookCachePath();
-  if (!cachePath) return false;
-  // A power cut between the write's remove and rename leaves only the complete .tmp copy.
-  for (const char* name : {"/read.bin", "/read.bin.tmp"}) {
-    HalFile f;
-    uint8_t marker = 0;
-    if (Storage.openFileForRead("RD", *cachePath + name, f) && f.read(&marker, sizeof(marker)) == sizeof(marker)) {
-      return marker != 0;
-    }
-  }
-  return false;
+  return cachePath != nullptr && BookReadState::readMarker(*cachePath);
 }
 
 bool ReaderActivity::writeBookReadFile(const bool read) const {
   const std::string* cachePath = bookCachePath();
-  if (!cachePath) return false;
-  if (!read) {
-    // Missing files already mean "not read"; the temp may be a left-over write.
-    Storage.remove((*cachePath + "/read.bin").c_str());
-    Storage.remove((*cachePath + "/read.bin.tmp").c_str());
-    return true;
-  }
-  const uint8_t marker = 1;
-  return ProgressFile::writeAtomic(*cachePath, &marker, sizeof(marker), "read.bin");
+  return cachePath != nullptr && BookReadState::writeMarker(*cachePath, read);
 }
 
 std::optional<uint32_t> ReaderActivity::bookReadingForMenu() const {

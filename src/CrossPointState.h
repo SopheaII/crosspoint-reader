@@ -22,8 +22,9 @@ class CrossPointState : public PersistableStore<CrossPointState> {
   bool lastSleepFromReader = false;
   bool showBootScreen = true;
   uint32_t totalReadingSeconds = 0;
-  // Books marked read from the reader menu. The per-book flag lives in that
-  // book's cache dir; this is the running total shown in the Home header.
+  // Books marked read from the reader menu or the Library. The per-book flag
+  // lives in that book's cache dir; this is the running total shown in the
+  // Home header.
   uint32_t booksRead = 0;
 
   void addReadingSeconds(const uint32_t seconds) {

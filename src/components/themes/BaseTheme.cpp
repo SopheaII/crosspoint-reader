@@ -516,7 +516,7 @@ void BaseTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const char* t
     reading_eye::draw(renderer, clockX, iconY);
     if (showBooksRead) {
       const int timeWidth = renderer.getTextWidth(SMALL_FONT_ID, readingTimeText);
-      reading_book::draw(renderer, clockX + timeWidth + reading_book::GAP, iconY);
+      reading_book::draw(renderer, clockX + timeWidth + reading_book::LEADING_GAP, iconY);
     }
   }
 }

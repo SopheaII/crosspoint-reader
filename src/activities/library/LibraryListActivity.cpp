@@ -17,6 +17,7 @@
 #include <esp_system.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 
 #include "CrossPointSettings.h"
@@ -32,6 +33,7 @@
 #include "components/icons/search32.h"
 #include "fontIds.h"
 #include "util/BookCacheUtils.h"
+#include "util/BookReadState.h"
 
 namespace fui = freeink::ui;
 
@@ -340,47 +342,70 @@ void LibraryListActivity::showRecentBookOptions(const int entry) {
     }
   }
 
-  enum Choice : uint8_t { OPEN, FAVORITE, REMOVE_RECENT, DELETE_BOOK, REBUILD };
+  enum Choice : uint8_t { OPEN, FAVORITE, MARK_READ, REMOVE_RECENT, DELETE_BOOK, REBUILD };
   const bool isFavorite = FAVORITES.isFavorite(path);
-  const char* labels[5];
-  std::array<uint8_t, 5> choices{};
+  const bool isRead = BookReadState::isBookRead(path);
+  const char* labels[6];
+  std::array<uint8_t, 6> choices{};
+  std::array<OptionPopup::Toggle, 6> toggleStates{};
   size_t optionCount = 0;
-  const auto addOption = [&](const Choice choice, const char* label) {
+  const auto addOption = [&](const Choice choice, const char* label,
+                             const OptionPopup::Toggle toggle = OptionPopup::Toggle::None) {
     labels[optionCount] = label;
-    choices[optionCount++] = choice;
+    choices[optionCount] = choice;
+    toggleStates[optionCount++] = toggle;
   };
   addOption(OPEN, tr(STR_OPEN));
-  addOption(FAVORITE, isFavorite         ? tr(STR_REMOVE_FROM_FAVORITES)
-                      : FAVORITES.full() ? tr(STR_FAVORITES_FULL)
-                                         : tr(STR_ADD_TO_FAVORITES));
+  // Favorites and read state are toggles, so both can be changed without
+  // reopening the menu. At the favorites cap the row stays an action row and
+  // says the list is full instead of showing a box that cannot be set.
+  if (isFavorite || !FAVORITES.full()) {
+    addOption(FAVORITE, tr(STR_FAVORITE), isFavorite ? OptionPopup::Toggle::On : OptionPopup::Toggle::Off);
+  } else {
+    addOption(FAVORITE, tr(STR_FAVORITES_FULL));
+  }
+  addOption(MARK_READ, tr(STR_MARK_AS_READ), isRead ? OptionPopup::Toggle::On : OptionPopup::Toggle::Off);
   if (isStoreRow) addOption(REMOVE_RECENT, tr(STR_REMOVE_FROM_RECENTS));
   addOption(DELETE_BOOK, tr(STR_DELETE));
   addOption(REBUILD, tr(STR_LIBRARY_REBUILD));
   app.clearTapFlash();
-  optionPopup.show(tr(STR_LIBRARY), title.c_str(), labels, static_cast<int>(optionCount), 0,
-                   [this, path, title, choices](const int choice) {
-                     swallowHeldReleases();
-                     if (choice < 0 || choice >= static_cast<int>(choices.size())) return;
-                     switch (choices[static_cast<size_t>(choice)]) {
-                       case OPEN:
-                         openBookByPath(path);
-                         break;
-                       case FAVORITE:
-                         toggleFavorite(path);
-                         break;
-                       case REMOVE_RECENT:
-                         promptRemoveRecentBook(path, title);
-                         break;
-                       case DELETE_BOOK:
-                         promptDeleteBookByPath(path, title);
-                         break;
-                       case REBUILD:
-                         promptRebuildIndex();
-                         break;
-                       default:
-                         break;
-                     }
-                   });
+  optionPopup.showRows(tr(STR_LIBRARY), title.c_str(), labels, toggleStates.data(), static_cast<int>(optionCount),
+                       [this, path, title, choices](const int choice) {
+                         swallowHeldReleases();
+                         if (choice < 0 || choice >= static_cast<int>(choices.size())) return;
+                         switch (choices[static_cast<size_t>(choice)]) {
+                           case OPEN:
+                             openBookByPath(path);
+                             break;
+                           case FAVORITE:
+                             toggleFavorite(path);
+                             // The menu stays open, so show what the store
+                             // actually holds (add can fail when full).
+                             optionPopup.setToggleState(choice, FAVORITES.isFavorite(path));
+                             break;
+                           case MARK_READ: {
+                             const bool nowRead = !BookReadState::isBookRead(path);
+                             if (!BookReadState::setBookRead(path, nowRead)) {
+                               LOG_ERR("LIB", "cannot save read state: %s", path.c_str());
+                               // A failed write can still leave the flag on the
+                               // card, so show what it actually holds.
+                               optionPopup.setToggleState(choice, BookReadState::isBookRead(path));
+                             }
+                             break;
+                           }
+                           case REMOVE_RECENT:
+                             promptRemoveRecentBook(path, title);
+                             break;
+                           case DELETE_BOOK:
+                             promptDeleteBookByPath(path, title);
+                             break;
+                           case REBUILD:
+                             promptRebuildIndex();
+                             break;
+                           default:
+                             break;
+                         }
+                       });
   requestUpdate();
 }
 

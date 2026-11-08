@@ -9,12 +9,12 @@
 #include <algorithm>
 
 #include "CrossPointSettings.h"
-#include "ProgressFile.h"
 #include "ReaderActivity.h"
 #include "ReaderUtils.h"
 #include "XtcReaderChapterSelectionActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
+#include "util/ProgressFile.h"
 
 bool XtcReaderActivity::loadBook() {
   auto loadedXtc = makeUniqueNoThrow<Xtc>(bookPath, "/.crosspoint");

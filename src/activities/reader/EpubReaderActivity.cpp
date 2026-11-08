@@ -41,7 +41,6 @@
 #include "KOReaderCredentialStore.h"
 #include "KOReaderSyncActivity.h"
 #include "MappedInputManager.h"
-#include "ProgressFile.h"
 #include "ProgressMapper.h"
 #include "QrDisplayActivity.h"
 #include "ReaderActivity.h"
@@ -59,8 +58,10 @@
 #include "clippings/ClippingsManager.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
+#include "util/BookReadState.h"
 #include "util/BookmarkUtil.h"
 #include "util/ButtonNavigator.h"
+#include "util/ProgressFile.h"
 #include "util/ScreenshotUtil.h"
 
 namespace {
@@ -1356,17 +1357,10 @@ void EpubReaderActivity::applyOrientation(const uint8_t orientation) {
 
 void EpubReaderActivity::setBookRead(const bool read) {
   if (!epub || read == bookRead) return;
-  if (!writeBookReadFile(read)) {
+  const std::string* cachePath = bookCachePath();
+  if (!cachePath || !BookReadState::setReadState(*cachePath, read)) {
     LOG_ERR("ERS", "Could not save read state");
     return;
-  }
-  if (read) {
-    if (APP_STATE.booksRead < UINT32_MAX) ++APP_STATE.booksRead;
-  } else if (APP_STATE.booksRead > 0) {
-    --APP_STATE.booksRead;
-  }
-  if (!APP_STATE.saveToFile()) {
-    LOG_ERR("ERS", "Could not save books read total");
   }
   bookRead = read;
 }

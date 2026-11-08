@@ -13,8 +13,10 @@ namespace reading_book {
 
 inline constexpr int WIDTH = 10;
 inline constexpr int HEIGHT = 12;
-// Wider than the eye's gap: the count is a separate statistic, not part of the time.
-inline constexpr int GAP = 14;
+// Gap between the glyph and its count, the same as the eye's.
+inline constexpr int GAP = 8;
+// The count is a separate statistic, so leave the glyph clear of the reading time.
+inline constexpr int LEADING_GAP = 14;
 inline constexpr int MAX_PADDING_SPACES = 16;
 inline constexpr uint16_t ROWS[HEIGHT] = {0x3F00, 0x7F80, 0x4080, 0x4080, 0x4080, 0x4080,
                                           0x4080, 0x4080, 0xFFC0, 0x4080, 0x4080, 0x3F00};
@@ -23,7 +25,7 @@ inline constexpr uint16_t ROWS[HEIGHT] = {0x3F00, 0x7F80, 0x4080, 0x4080, 0x4080
 inline int paddingSpaces(const GfxRenderer& renderer, const int fontId) {
   const int spaceWidth = renderer.getSpaceWidth(fontId);
   if (spaceWidth <= 0) return 0;
-  return std::min((WIDTH + 2 * GAP + spaceWidth - 1) / spaceWidth, MAX_PADDING_SPACES);
+  return std::min((LEADING_GAP + WIDTH + GAP + spaceWidth - 1) / spaceWidth, MAX_PADDING_SPACES);
 }
 
 inline void draw(const GfxRenderer& renderer, const int x, const int y) {

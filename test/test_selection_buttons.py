@@ -124,6 +124,11 @@ struct Popup {
   std::vector<int> ownedStrings{0};
   std::function<void(int)> onSelectCallback;
   bool isActive() const { return active; }
+  // Mirror OptionPopup::fire() for the action-row case this test exercises.
+  void fire(const int index) {
+    active = false;
+    if (onSelectCallback) onSelectCallback(index);
+  }
 """ + popup_buttons + r"""
   // Model an outside release after the shared touch router finds no dialog hit.
   bool handleInput(const Input& input, const std::function<void()>& update) {
