@@ -10,6 +10,12 @@
 
 #include "HalGPIO.h"
 
+// Experimental X4 idle light sleep while reading. Off unless the build passes
+// -DCROSSPOINT_IDLE_LIGHT_SLEEP=1.
+#ifndef CROSSPOINT_IDLE_LIGHT_SLEEP
+#define CROSSPOINT_IDLE_LIGHT_SLEEP 0
+#endif
+
 class HalPowerManager;
 extern HalPowerManager powerManager;  // Singleton
 
@@ -37,6 +43,15 @@ class HalPowerManager {
 
   // Control CPU frequency for power saving
   void setPowerSaving(bool enabled);
+
+#if CROSSPOINT_IDLE_LIGHT_SLEEP
+  // Ladder buttons cannot wake the chip, so the slice bounds front-button tap latency.
+  static constexpr unsigned long LIGHT_SLEEP_SLICE_MS = 20;
+  // X4 only: light-sleeps one slice, waking early on the power button or USB.
+  // Returns false without sleeping on other boards, with WiFi or USB present,
+  // or while a Lock is held. The caller keeps display and SD traffic out of it.
+  bool idleLightSleep(const HalGPIO& gpio);
+#endif
 
   // Setup wake up GPIO and enter deep sleep
   // Should be called inside main loop() to handle the currentLockMode

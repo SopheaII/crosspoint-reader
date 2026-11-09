@@ -851,6 +851,19 @@ void setup() {
   allowSleepAt = millis() + 2000;
 }
 
+#if CROSSPOINT_IDLE_LIGHT_SLEEP
+// Light-sleeps one slice while a book page sits idle. Owning the render lock
+// keeps every display and SD transfer out of the slice.
+static bool idleLightSleepSlice() {
+  if (!activityManager.isForegroundReader() || activityManager.updatePending() || gpio.rawInputActive()) {
+    return false;
+  }
+  RenderLock lock(RenderLock::Mode::Try);
+  if (!lock.ownsLock() || display.refreshBusy()) return false;
+  return powerManager.idleLightSleep(gpio);
+}
+#endif
+
 void loop() {
   static unsigned long maxLoopDuration = 0;
   const unsigned long loopStartTime = millis();
@@ -1112,6 +1125,9 @@ void loop() {
     yield();                             // Give FreeRTOS a chance to run tasks, but return immediately
   } else {
     if (millis() - lastActivityTime >= HalPowerManager::IDLE_POWER_SAVING_MS && !pageturner::holdsCpu.load()) {
+#if CROSSPOINT_IDLE_LIGHT_SLEEP
+      if (idleLightSleepSlice()) return;
+#endif
       // If we've been inactive for a while, increase the delay to save power
       powerManager.setPowerSaving(true);  // Lower CPU frequency after extended inactivity
       // Sleep in short slices and wake the poll as soon as a button contact closes.

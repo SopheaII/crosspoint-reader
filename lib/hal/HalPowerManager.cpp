@@ -15,7 +15,7 @@
 #include <HalFrontlight.h>
 #endif
 
-#if FREEINK_DEVICE_PICCO
+#if FREEINK_DEVICE_PICCO || CROSSPOINT_IDLE_LIGHT_SLEEP
 #include <driver/gpio.h>
 #endif
 
@@ -80,6 +80,67 @@ void HalPowerManager::setPowerSaving(bool enabled) {
   // Otherwise, no change needed
   xSemaphoreGive(modeMutex);
 }
+
+#if CROSSPOINT_IDLE_LIGHT_SLEEP
+bool HalPowerManager::idleLightSleep(const HalGPIO& gpio) {
+#if FREEINK_DEVICE_X4
+  const auto& board = BoardConfig::ACTIVE;
+  if (board.board != BoardConfig::Board::XteinkX4 || board.input.power < 0 || board.usbDetect < 0) return false;
+  // Light sleep drops a WiFi association and floats the USB pads.
+  if (WiFi.getMode() != WIFI_MODE_NULL || gpio.isUsbConnected()) return false;
+
+  // Held through the slice, so a Lock requested meanwhile waits for the wake.
+  xSemaphoreTake(modeMutex, portMAX_DELAY);
+  if (currentLockMode != None) {
+    xSemaphoreGive(modeMutex);
+    return false;
+  }
+  // Each wake polls the buttons; that work costs less charge at full clock.
+  if (isLowPower && setCpuFrequencyMhz(normalFreq)) isLowPower = false;
+
+  // CONFIG_ESP_SLEEP_GPIO_RESET_WORKAROUND isolates every pad during sleep.
+  // Keep the battery latch and the panel and SD outputs driven: a floating
+  // latch can cut battery power, and floating panel or SD control lines can
+  // reach their controllers.
+  const int8_t keptPins[] = {board.power.latch0, board.display.sclk, board.display.mosi, board.display.cs,
+                             board.display.dc,   board.display.rst,  board.sd.cs};
+  for (const int8_t pin : keptPins) {
+    if (pin >= 0) gpio_sleep_sel_dis(static_cast<gpio_num_t>(pin));
+  }
+
+  const auto powerPin = static_cast<gpio_num_t>(board.input.power);
+  const auto usbPin = static_cast<gpio_num_t>(board.usbDetect);
+  esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(LIGHT_SLEEP_SLICE_MS) * 1000ULL);
+  gpio_wakeup_enable(powerPin, board.input.powerActiveHigh ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL);
+  gpio_wakeup_enable(usbPin, board.usbDetectActiveHigh ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL);
+  esp_sleep_enable_gpio_wakeup();
+
+  const esp_err_t err = esp_light_sleep_start();
+
+  // Disarm everything: a leftover timer wake would carry into deep sleep, and
+  // gpio_wakeup_disable() keeps the level interrupt type, which would storm the
+  // GPIO ISR service installed for the panel BUSY pin.
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+  for (const gpio_num_t pin : {powerPin, usbPin}) {
+    gpio_wakeup_disable(pin);
+    gpio_set_intr_type(pin, GPIO_INTR_DISABLE);
+  }
+  for (const int8_t pin : keptPins) {
+    if (pin >= 0) gpio_sleep_sel_en(static_cast<gpio_num_t>(pin));
+  }
+  xSemaphoreGive(modeMutex);
+
+  if (err != ESP_OK) {
+    LOG_DBG("PWR", "Light sleep rejected: %d", static_cast<int>(err));
+    return false;
+  }
+  return true;
+#else
+  (void)gpio;
+  return false;
+#endif
+}
+#endif
 
 void HalPowerManager::startDeepSleep(HalGPIO& gpio, const bool wakeOnHeldButton) const {
 #if FREEINK_DEVICE_EEGO_A4 || FREEINK_DEVICE_PICCO
