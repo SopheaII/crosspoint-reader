@@ -19,7 +19,7 @@ namespace {
 // when the RTC probe found hardware; time, zone, and format live in Settings >
 // System > Clock.
 enum MenuItem {
-  ITEM_CHAPTER_PAGE_COUNT = 0,
+  ITEM_PAGE_COUNT = 0,
   ITEM_BOOK_PROGRESS_PERCENTAGE,
   ITEM_PROGRESS_BAR,
   ITEM_PROGRESS_BAR_THICKNESS,
@@ -36,7 +36,7 @@ static_assert(FULL_MENU_ITEMS == StatusBarSettingsActivity::MAX_STATUS_BAR_ITEMS
               "keep StatusBarSettingsActivity::MAX_STATUS_BAR_ITEMS in sync with ITEM_COUNT");
 
 const StrId menuNames[FULL_MENU_ITEMS] = {
-    StrId::STR_CHAPTER_PAGE_COUNT,
+    StrId::STR_PAGE_COUNT,
     StrId::STR_BOOK_PROGRESS_PERCENTAGE,
     StrId::STR_PROGRESS_BAR,
     StrId::STR_PROGRESS_BAR_THICKNESS,
@@ -45,6 +45,9 @@ const StrId menuNames[FULL_MENU_ITEMS] = {
     StrId::STR_XTC_STATUS_BAR,
     StrId::STR_CLOCK,
 };
+
+constexpr int PAGE_COUNT_ITEMS = CrossPointSettings::STATUS_BAR_PAGE_COUNT_COUNT;
+const StrId pageCountNames[PAGE_COUNT_ITEMS] = {StrId::STR_HIDE, StrId::STR_CHAPTER, StrId::STR_BOOK};
 
 constexpr int PROGRESS_BAR_ITEMS = 3;
 const StrId progressBarNames[PROGRESS_BAR_ITEMS] = {StrId::STR_BOOK, StrId::STR_CHAPTER, StrId::STR_HIDE};
@@ -73,7 +76,11 @@ void StatusBarSettingsActivity::onEnter() {
 
   visibleItemCount = halClock.isAvailable() ? FULL_MENU_ITEMS : BASE_MENU_ITEMS;
 
-  // Clamp statusBarProgressBar and statusBarTitle in case of corrupt/migrated data
+  // Clamp enum settings in case of corrupt/migrated data
+  if (SETTINGS.statusBarPageCount >= PAGE_COUNT_ITEMS) {
+    SETTINGS.statusBarPageCount = CrossPointSettings::STATUS_BAR_PAGE_COUNT::PAGE_COUNT_CHAPTER;
+  }
+
   if (SETTINGS.statusBarProgressBar >= PROGRESS_BAR_ITEMS) {
     SETTINGS.statusBarProgressBar = CrossPointSettings::STATUS_BAR_PROGRESS_BAR::HIDE_PROGRESS;
   }
@@ -118,9 +125,13 @@ void StatusBarSettingsActivity::activateIndex(const int index) {
 
 void StatusBarSettingsActivity::handleSelection() {
   switch (nav.selected) {
-    case ITEM_CHAPTER_PAGE_COUNT:
-      SETTINGS.statusBarChapterPageCount = (SETTINGS.statusBarChapterPageCount + 1) % 2;
-      break;
+    case ITEM_PAGE_COUNT:
+      optionPopup.show(StrId::STR_PAGE_COUNT, pageCountNames, PAGE_COUNT_ITEMS, SETTINGS.statusBarPageCount,
+                       [this](int idx) {
+                         SETTINGS.statusBarPageCount = idx;
+                         SETTINGS.saveToFile();
+                       });
+      return;
     case ITEM_BOOK_PROGRESS_PERCENTAGE:
       SETTINGS.statusBarBookProgressPercentage = (SETTINGS.statusBarBookProgressPercentage + 1) % 2;
       break;
@@ -165,6 +176,8 @@ void StatusBarSettingsActivity::handleSelection() {
 
 std::string StatusBarSettingsActivity::rowValueText(const int index) {
   switch (index) {
+    case ITEM_PAGE_COUNT:
+      return I18N.get(pageCountNames[SETTINGS.statusBarPageCount]);
     case ITEM_PROGRESS_BAR:
       return I18N.get(progressBarNames[SETTINGS.statusBarProgressBar]);
     case ITEM_PROGRESS_BAR_THICKNESS:
@@ -201,7 +214,6 @@ void StatusBarSettingsActivity::buildScreen(UiScreen& screen) {
     rowValues_[i] = rowValueText(i);
     rowItems_[i].value = rowValues_[i].empty() ? nullptr : rowValues_[i].c_str();
   }
-  GUI.setCheckboxRow(rowItems_[ITEM_CHAPTER_PAGE_COUNT], SETTINGS.statusBarChapterPageCount);
   GUI.setCheckboxRow(rowItems_[ITEM_BOOK_PROGRESS_PERCENTAGE], SETTINGS.statusBarBookProgressPercentage);
   GUI.setCheckboxRow(rowItems_[ITEM_BATTERY], SETTINGS.statusBarBattery);
 
@@ -242,7 +254,7 @@ void StatusBarSettingsActivity::render(RenderLock&&) {
   }
 
   // Anchor the preview as a footer directly above the button hints.
-  GUI.drawStatusBar(renderer, 75, 8, 32, title, metrics.buttonHintsHeight, 0, false);
+  GUI.drawStatusBar(renderer, 75, 8, 32, title, metrics.buttonHintsHeight, 0, false, false, false, 240, 320);
 
   renderer.drawCenteredText(UI_10_FONT_ID,
                             renderer.getScreenHeight() - UITheme::getInstance().getStatusBarHeight() -

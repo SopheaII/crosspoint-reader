@@ -49,6 +49,13 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     STATUS_BAR_PROGRESS_BAR_THICKNESS_COUNT
   };
   enum STATUS_BAR_TITLE { BOOK_TITLE = 0, CHAPTER_TITLE = 1, HIDE_TITLE = 2, STATUS_BAR_TITLE_COUNT };
+  // 0/1 keep the old Off/On meaning of the former chapter page count toggle.
+  enum STATUS_BAR_PAGE_COUNT {
+    PAGE_COUNT_HIDE = 0,
+    PAGE_COUNT_CHAPTER = 1,
+    PAGE_COUNT_BOOK = 2,
+    STATUS_BAR_PAGE_COUNT_COUNT
+  };
   enum XTC_STATUS_BAR_MODE {
     XTC_STATUS_BAR_HIDE = 0,
     XTC_STATUS_BAR_BOTTOM = 1,
@@ -268,7 +275,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // Sleep screen cover filter
   uint8_t sleepScreenCoverFilter = NO_FILTER;
   // Status bar settings
-  uint8_t statusBarChapterPageCount = 1;
+  uint8_t statusBarPageCount = PAGE_COUNT_CHAPTER;
   uint8_t statusBarBookProgressPercentage = 1;
   uint8_t statusBarProgressBar = HIDE_PROGRESS;
   uint8_t statusBarProgressBarThickness = PROGRESS_BAR_NORMAL;
@@ -466,7 +473,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // refresh. Locking here would instead put a mutex on the render path and
   // stall it behind the SD write inside saveToFile(). Don't add one back.
   struct StatusBarSpec {
-    bool showChapterPageCount = false;
+    uint8_t pageCountMode = PAGE_COUNT_HIDE;  // STATUS_BAR_PAGE_COUNT
     bool showBookProgressPercent = false;
     uint8_t titleMode = HIDE_TITLE;  // STATUS_BAR_TITLE
     bool showBattery = false;
@@ -478,12 +485,13 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     uint8_t xtcMode = XTC_STATUS_BAR_HIDE;    // XTC_STATUS_BAR_MODE
 
     bool showsProgressBar() const { return progressBarMode != HIDE_PROGRESS; }
+    bool showsPageCount() const { return pageCountMode != PAGE_COUNT_HIDE; }
     bool showsTitle() const { return titleMode != HIDE_TITLE; }
     bool showsClock() const { return clockMode != STATUS_BAR_CLOCK_HIDE; }
     // Visibility of the text lane. Clock hardware presence is the caller's
     // concern: pass halClock.isAvailable(), or true for layout reservation.
     bool textLaneVisible(bool clockAvailable) const {
-      return showChapterPageCount || showBookProgressPercent || showsTitle() || showBattery ||
+      return showsPageCount() || showBookProgressPercent || showsTitle() || showBattery ||
              (showsClock() && clockAvailable);
     }
   };

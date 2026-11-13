@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <functional>
 #include <iterator>
 #include <limits>
@@ -2388,8 +2389,24 @@ void EpubReaderActivity::renderStatusBar() const {
     title = epub ? epub->getTitle() : "";
   }
 
+  // EPUB has no whole-book page count. Estimate one by assuming the whole book
+  // has the current chapter's pages per byte; it is always marked with "~".
+  const bool bookMode = sb.pageCountMode == CrossPointSettings::PAGE_COUNT_BOOK;
+  int bookPage = 0;
+  int bookPageCount = 0;
+  if (bookMode && epub && pageCount > 0) {
+    const size_t chapterStart = currentSpineIndex > 0 ? epub->getCumulativeSpineItemSize(currentSpineIndex - 1) : 0;
+    const size_t chapterBytes = epub->getCumulativeSpineItemSize(currentSpineIndex) - chapterStart;
+    const size_t bookBytes = epub->getBookSize();
+    if (chapterBytes > 0 && bookBytes >= chapterBytes) {
+      bookPageCount = std::max(1, static_cast<int>(std::lround(pageCount * static_cast<float>(bookBytes) / chapterBytes)));
+      bookPage = std::clamp(static_cast<int>(std::lround(bookProgress / 100.0f * bookPageCount)), 1, bookPageCount);
+    }
+  }
+  const bool pageCountEstimated = bookMode || (section && section->isBuilding());
+
   GUI.drawStatusBar(renderer, bookProgress, currentPage, pageCount, title, 0, textYOffset, true, currentPageBookmarked,
-                    section ? section->isBuilding() : false);
+                    pageCountEstimated, bookPage, bookPageCount);
 }
 
 // ---------------------------------------------------------------------------
